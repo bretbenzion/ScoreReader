@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#141414">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>ScoreReader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #141414;
+      --surface:  #1e1e1e;
+      --border:   #2c2c2c;
+      --muted:    #555;
+      --text:     #c8c8c8;
+      --accent:   #5b8cf7;
+      --accent-h: #7aaeff;
+      --danger:   #e05c5c;
+      --toolbar-h: 58px;
+      --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      max-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* ─── Layout ─────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    #viewer {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Subtle grid background texture */
+    #viewer::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 32px 32px;
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    /* ─── Canvas ──────────────────────────────────────────── */
+    #canvas-wrap {
+      position: relative;
+      display: inline-block;
+      z-index: 1;
+    }
+
+    #pdf-canvas {
+      display: block;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04),
+        0 8px 40px rgba(0,0,0,0.7),
+        0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    /* ─── Empty State ─────────────────────────────────────── */
+    #empty-state {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    #empty-state.hidden { display: none; }
+
+    .empty-icon {
+      font-size: 52px;
+      opacity: 0.25;
+      line-height: 1;
+    }
+
+    .empty-title {
+      font-size: 1rem;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    #open-main-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-family: var(--font-ui);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: background 0.15s, transform 0.1s;
+      display: inline-block;
+    }
+
+    #open-main-btn:hover  { background: var(--accent-h); }
+    #open-main-btn:active { transform: scale(0.97); }
+
+    .empty-hint {
+      font-size: 0.78rem;
+      color: #3a3a3a;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── Drag-over overlay ───────────────────────────────── */
+    #drag-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      background: rgba(91,140,247,0.08);
+      border: 2px dashed var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+
+    #drag-overlay.active { opacity: 1; pointer-events: auto; }
+
+    /* ─── Loading ─────────────────────────────────────────── */
+    #loading {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(20,20,20,0.75);
+      backdrop-filter: blur(4px);
+    }
+
+    #loading.hidden { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    .loading-text {
+      font-size: 0.82rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ─── Toolbar ─────────────────────────────────────────── */
+    #toolbar {
+      height: var(--toolbar-h);
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 0 12px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+
+    .tb-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      width: 40px;
+      height: 40px;
+      border-radius: 7px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s, color 0.12s;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .tb-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .tb-btn:hover:not(:disabled)  { background: rgba(255,255,255,0.07); color: #fff; }
+    .tb-btn:active:not(:disabled) { background: rgba(255,255,255,0.12); }
+    .tb-btn:disabled { color: var(--muted); cursor: default; opacity: 0.45; }
+
+    .tb-btn.active { color: var(--accent); }
+
+    .tb-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+      margin: 0 6px;
+      flex-shrink: 0;
+    }
+
+    /* Pill indicators */
+    .tb-pill {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-width: 52px;
+      text-align: center;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+      padding: 0 4px;
+    }
+
+    /* ─── Toast ───────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: calc(var(--toolbar-h) + 12px);
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: rgba(30,30,30,0.95);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 8px 16px;
+      border-radius: 6px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 200;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ─── Tooltip ─────────────────────────────────────────── */
+    .tb-btn::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2a2a2a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.72rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 300;
+      letter-spacing: 0.02em;
+    }
+
+    .tb-btn:hover:not(:disabled)::after { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Viewer -->
+  <div id="viewer" id="viewer">
+
+    <div id="canvas-wrap">
+      <canvas id="pdf-canvas"></canvas>
+    </div>
+
+    <!-- Empty state -->
+    <div id="empty-state">
+      <div class="empty-icon">𝄞</div>
+      <p class="empty-title">No score loaded</p>
+      <label id="open-main-btn" for="file-input">Open PDF Score</label>
+      <p class="empty-hint">or drag a PDF into this window</p>
+    </div>
+
+    <!-- Drag overlay -->
+    <div id="drag-overlay">Drop PDF to open</div>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden">
+      <div class="spinner"></div>
+      <span class="loading-text">Loading Score…</span>
+    </div>
+
+  </div>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+
+    <!-- Open -->
+    <label class="tb-btn" for="file-input" data-tip="Open PDF  (O)">
+      <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+    </label>
+
+    <div class="tb-divider"></div>
+
+    <!-- Page nav -->
+    <button class="tb-btn" id="tb-prev" data-tip="Prev Page  (←)" onclick="changePage(-1)" disabled>
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+
+    <span class="tb-pill" id="page-pill">— / —</span>
+
+    <button class="tb-btn" id="tb-next" data-tip="Next Page  (→)" onclick="changePage(1)" disabled>
+      <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+
+    <div class="tb-divider"></div>
+
+    <!-- Zoom -->
+    <button class="tb-btn" id="tb-zoom-out" data-tip="Zoom Out  (−)" onclick="changeZoom(-1)" disabled>
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+    </button>
+
+    <span class="tb-pill" id="zoom-pill">—</span>
+
+    <button class="tb-btn" id="tb-zoom-in" data-tip="Zoom In  (=)" onclick="changeZoom(1)" disabled>
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+    </button>
+
+    <button class="tb-btn" id="tb-fit" data-tip="Fit to Width  (W)" onclick="fitToWidth()" disabled>
+      <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+    </button>
+
+    <div class="tb-divider"></div>
+
+    <!-- Rotate -->
+    <button class="tb-btn" id="tb-rotate" data-tip="Rotate 90°  (R)" onclick="rotatePage()" disabled>
+      <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+    </button>
+
+    <!-- Fullscreen -->
+    <button class="tb-btn" id="tb-fs" data-tip="Fullscreen  (F)" onclick="toggleFullscreen()">
+      <svg viewBox="0 0 24 24" id="fs-icon-expand">
+        <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+        <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+      </svg>
+      <svg viewBox="0 0 24 24" id="fs-icon-shrink" style="display:none">
+        <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+        <line x1="10" y1="14" x2="3" y2="21"/><line x1="14" y1="10" x2="21" y2="3"/>
+      </svg>
+    </button>
+
+  </div>
+
+</div>
+
+<!-- Hidden file input -->
+<input type="file" id="file-input" accept=".pdf,application/pdf" style="display:none" onchange="handleFileInput(event)">
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+// ─── PDF.js worker ────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ─── State ────────────────────────────────────────────────
+let pdfDoc      = null;
+let currentPage = 1;
+let totalPages  = 0;
+let rotation    = 0;   // 0 | 90 | 180 | 270
+let renderTask  = null;
+
+const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0];
+let zoomIdx = 6; // default 100%
+
+// ─── Elements ─────────────────────────────────────────────
+const canvas      = document.getElementById('pdf-canvas');
+const ctx         = canvas.getContext('2d');
+const emptyState  = document.getElementById('empty-state');
+const loadingEl   = document.getElementById('loading');
+const pagePill    = document.getElementById('page-pill');
+const zoomPill    = document.getElementById('zoom-pill');
+const dragOverlay = document.getElementById('drag-overlay');
+const viewer      = document.getElementById('viewer');
+
+// ─── File loading ─────────────────────────────────────────
+
+async function handleFileInput(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) await openFile(file);
+}
+
+async function openFile(file) {
+  if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+    toast('Only PDF files are supported.');
+    return;
+  }
+  setLoading(true);
+  emptyState.classList.add('hidden');
+  try {
+    const ab = await file.arrayBuffer();
+    pdfDoc     = await pdfjsLib.getDocument({ data: ab }).promise;
+    totalPages = pdfDoc.numPages;
+    currentPage = 1;
+    rotation    = 0;
+    zoomIdx     = 6;
+    await fitToWidth();
+    updateUI();
+    toast(`${file.name}  ·  ${totalPages} page${totalPages > 1 ? 's' : ''}`);
+  } catch (err) {
+    console.error(err);
+    toast('Failed to load PDF. Is the file valid?');
+    emptyState.classList.remove('hidden');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ─── Rendering ────────────────────────────────────────────
+async function renderPage() {
+  if (!pdfDoc) return;
+
+  // Cancel any in-flight render
+  if (renderTask) {
+    try { renderTask.cancel(); } catch {}
+    renderTask = null;
+  }
+
+  const page     = await pdfDoc.getPage(currentPage);
+  const scale    = ZOOM_LEVELS[zoomIdx];
+  const dpr      = window.devicePixelRatio || 1;
+  const viewport = page.getViewport({ scale, rotation });
+
+  // Physical pixels
+  canvas.width  = Math.floor(viewport.width  * dpr);
+  canvas.height = Math.floor(viewport.height * dpr);
+  // CSS size
+  canvas.style.width  = Math.floor(viewport.width)  + 'px';
+  canvas.style.height = Math.floor(viewport.height) + 'px';
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  renderTask = page.render({ canvasContext: ctx, viewport });
+  try {
+    await renderTask.promise;
+  } catch (e) {
+    if (e?.name !== 'RenderingCancelledException') console.error(e);
+  }
+  renderTask = null;
+}
+
+// ─── Page navigation ──────────────────────────────────────
+async function changePage(delta) {
+  if (!pdfDoc) return;
+  const next = currentPage + delta;
+  if (next < 1 || next > totalPages) return;
+  currentPage = next;
+  updateUI();
+  await renderPage();
+}
+
+// ─── Zoom ─────────────────────────────────────────────────
+async function changeZoom(delta) {
+  if (!pdfDoc) return;
+  const ni = zoomIdx + delta;
+  if (ni < 0 || ni >= ZOOM_LEVELS.length) return;
+  zoomIdx = ni;
+  updateUI();
+  await renderPage();
+}
+
+async function fitToWidth() {
+  if (!pdfDoc) return;
+  const page    = await pdfDoc.getPage(currentPage);
+  const vp      = page.getViewport({ scale: 1, rotation });
+  const toolbar = document.getElementById('toolbar');
+  const avail   = viewer.clientWidth - 24;           // small padding
+  const target  = avail / vp.width;
+
+  let closest = 0, minDiff = Infinity;
+  ZOOM_LEVELS.forEach((z, i) => {
+    const d = Math.abs(z - target);
+    if (d < minDiff) { minDiff = d; closest = i; }
+  });
+  zoomIdx = closest;
+  updateUI();
+  await renderPage();
+}
+
+// ─── Rotate ───────────────────────────────────────────────
+async function rotatePage() {
+  if (!pdfDoc) return;
+  rotation = (rotation + 90) % 360;
+  await renderPage();
+}
+
+// ─── Fullscreen ───────────────────────────────────────────
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  const isFs = !!document.fullscreenElement;
+  document.getElementById('fs-icon-expand').style.display = isFs ? 'none'  : '';
+  document.getElementById('fs-icon-shrink').style.display = isFs ? ''      : 'none';
+  document.getElementById('tb-fs').dataset.tip =
+    isFs ? 'Exit Fullscreen  (F)' : 'Fullscreen  (F)';
+  // Re-render in case size changed
+  if (pdfDoc) setTimeout(renderPage, 100);
+});
+
+// ─── UI update ────────────────────────────────────────────
+function updateUI() {
+  const has = !!pdfDoc;
+  pagePill.textContent = has ? `${currentPage} / ${totalPages}` : '— / —';
+  zoomPill.textContent = has ? Math.round(ZOOM_LEVELS[zoomIdx] * 100) + '%' : '—';
+
+  document.getElementById('tb-prev').disabled    = !has || currentPage <= 1;
+  document.getElementById('tb-next').disabled    = !has || currentPage >= totalPages;
+  document.getElementById('tb-zoom-out').disabled = !has || zoomIdx === 0;
+  document.getElementById('tb-zoom-in').disabled  = !has || zoomIdx === ZOOM_LEVELS.length - 1;
+  document.getElementById('tb-fit').disabled      = !has;
+  document.getElementById('tb-rotate').disabled   = !has;
+}
+
+// ─── Toast ────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg, duration = 2600) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ─── Loading state ────────────────────────────────────────
+function setLoading(show) {
+  loadingEl.classList.toggle('hidden', !show);
+}
+
+// ─── Drag and Drop ────────────────────────────────────────
+let dragCounter = 0;
+
+viewer.addEventListener('dragenter', e => {
+  e.preventDefault();
+  dragCounter++;
+  dragOverlay.classList.add('active');
+});
+
+viewer.addEventListener('dragleave', () => {
+  dragCounter--;
+  if (dragCounter <= 0) { dragCounter = 0; dragOverlay.classList.remove('active'); }
+});
+
+viewer.addEventListener('dragover', e => e.preventDefault());
+
+viewer.addEventListener('drop', async e => {
+  e.preventDefault();
+  dragCounter = 0;
+  dragOverlay.classList.remove('active');
+  const file = e.dataTransfer.files[0];
+  if (file) await openFile(file);
+});
+
+// ─── Touch swipe ──────────────────────────────────────────
+let touchX0 = 0, touchY0 = 0, touchMoving = false;
+
+canvas.addEventListener('touchstart', e => {
+  touchX0 = e.touches[0].clientX;
+  touchY0 = e.touches[0].clientY;
+  touchMoving = false;
+}, { passive: true });
+
+canvas.addEventListener('touchmove', () => { touchMoving = true; }, { passive: true });
+
+canvas.addEventListener('touchend', e => {
+  if (touchMoving) return; // was a scroll/zoom gesture
+  const dx = e.changedTouches[0].clientX - touchX0;
+  const dy = e.changedTouches[0].clientY - touchY0;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 55) {
+    changePage(dx < 0 ? 1 : -1);
+  }
+}, { passive: true });
+
+// ─── Keyboard shortcuts ───────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case 'ArrowRight': case 'PageDown': case 'l': case 'L':
+      changePage(1);  break;
+    case 'ArrowLeft':  case 'PageUp':   case 'h': case 'H':
+      changePage(-1); break;
+    case '+': case '=':
+      changeZoom(1);  break;
+    case '-': case '_':
+      changeZoom(-1); break;
+    case 'w': case 'W':
+      fitToWidth();   break;
+    case 'r': case 'R':
+      rotatePage();   break;
+    case 'f': case 'F':
+      toggleFullscreen(); break;
+    case 'o': case 'O':
+      document.getElementById('file-input').click(); break;
+  }
+});
+
+// ─── Resize / orientation ─────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (pdfDoc) renderPage(); }, 120);
+});
+
+screen.orientation?.addEventListener('change', () => {
+  if (pdfDoc) setTimeout(fitToWidth, 200);
+});
+
+// ─── Init ─────────────────────────────────────────────────
+updateUI();
+</script>
+</body>
+</html>
