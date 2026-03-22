@@ -391,7 +391,7 @@ let panScrollX = 0, panScrollY = 0;
 // During drawing, currentStroke accumulates raw points then gets committed.
 let annotations   = {};   // in-memory store
 let currentStroke = null; // stroke being drawn right now
-let strokeThickness = 2;  // px at fit-scale=1 (normalized on save); scales down as zoom increases
+let strokeThickness = 2;  // physical screen px at current zoom; stored in page-normalized units
 
 // ── Erase state ───────────────────────────────────────────
 const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
@@ -585,11 +585,9 @@ function drawStroke(stroke) {
 
   annCtx.save();
   annCtx.strokeStyle = stroke.color || '#2563eb';
-  // Scale thickness: stored at fitScale=1, rendered at currentScale
-  // Thickness stored normalized to fitScale. Render at fitScale but
-  // divide by zoom factor so strokes get thinner as you zoom in.
-  const zf1 = Math.pow(ZOOM_STEP, zoomLevel);
-  annCtx.lineWidth   = Math.max(0.5, (stroke.thickness * fitScale) / zf1);
+  // stroke.thickness is in page-normalized units (stored as screenPx / currentScale at draw time).
+  // Render by multiplying back by currentScale — so all strokes scale uniformly with zoom.
+  annCtx.lineWidth   = Math.max(0.5, stroke.thickness * currentScale());
   annCtx.lineCap     = 'round';
   annCtx.lineJoin    = 'round';
 
@@ -613,8 +611,7 @@ function drawStrokeIncremental(stroke) {
 
   annCtx.save();
   annCtx.strokeStyle = stroke.color || '#2563eb';
-  const zf2 = Math.pow(ZOOM_STEP, zoomLevel);
-  annCtx.lineWidth   = Math.max(0.5, (stroke.thickness * fitScale) / zf2);
+  annCtx.lineWidth   = Math.max(0.5, stroke.thickness * currentScale());
   annCtx.lineCap     = 'round';
   annCtx.lineJoin    = 'round';
   annCtx.beginPath();
@@ -637,7 +634,7 @@ annCanvas.addEventListener('pointerdown', e => {
   if (mode === 'draw') {
     const norm = toNorm(e.clientX, e.clientY);
     currentStroke = {
-      thickness: strokeThickness / fitScale,  // normalized: rendered width = thickness*fitScale/zoomFactor
+      thickness: strokeThickness / currentScale(),  // page-normalized: screenPx / currentScale
       color: '#2563eb',
       points: [norm]
     };
