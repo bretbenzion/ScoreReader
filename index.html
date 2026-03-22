@@ -100,6 +100,16 @@
     #viewer.pan-mode               { cursor: grab; }
     #viewer.pan-mode.is-panning    { cursor: grabbing; }
 
+    /* Lock scroll + pinch-zoom while pen is active */
+    #viewer.draw-mode,
+    #viewer.erase-mode {
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    /* Prevent browser hijacking pen strokes as scroll gestures */
+    #ann-canvas { touch-action: none; }
+
     /* ─── Empty state ─────────────────────────────────────── */
     #empty-state {
       position: fixed; inset: 0; bottom: var(--toolbar-h); z-index: 10;
@@ -714,11 +724,30 @@ function setMode(newMode) {
   if (!pdfDoc) return;
   // Toggle off if already active
   if (mode === newMode) newMode = 'none';
+
+  // Freeze scroll position before entering draw/erase so the page
+  // doesn't shift under the pen. Restore it on exit.
+  const entering = (newMode === 'draw' || newMode === 'erase');
+  const leaving  = (mode  === 'draw' || mode  === 'erase') && !entering;
+
+  if (entering) {
+    // Capture current scroll so we can lock the viewer in place
+    viewer._frozenScrollLeft = viewer.scrollLeft;
+    viewer._frozenScrollTop  = viewer.scrollTop;
+  }
+
   mode = newMode;
 
   viewer.classList.toggle('draw-mode',  mode === 'draw');
   viewer.classList.toggle('erase-mode', mode === 'erase');
   viewer.classList.toggle('pan-mode',   mode === 'pan');
+
+  // After CSS overflow:hidden is applied, the scroll position resets to 0.
+  // Immediately re-apply the frozen position so the view doesn't jump.
+  if (entering) {
+    viewer.scrollLeft = viewer._frozenScrollLeft;
+    viewer.scrollTop  = viewer._frozenScrollTop;
+  }
 
   document.getElementById('tb-draw').classList.toggle('active',        mode === 'draw');
   document.getElementById('tb-erase').classList.toggle('active-danger', mode === 'erase');
