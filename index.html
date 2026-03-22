@@ -386,12 +386,12 @@ let panScrollX = 0, panScrollY = 0;
 
 // ── Annotation state ──────────────────────────────────────
 // annotations[pageNum] = [ stroke, stroke, … ]
-// stroke = { thickness, color, points: [{x, y, pressure}] }
-//   x, y normalized 0-1; pressure 0-1 (default 1.0 for legacy strokes)
+// stroke = { thickness, color, points: [{x, y}] }
+//   x, y normalized 0-1 relative to page dimensions
 // During drawing, currentStroke accumulates raw points then gets committed.
 let annotations   = {};   // in-memory store
 let currentStroke = null; // stroke being drawn right now
-let strokeThickness = 4;  // physical screen px at current zoom; stored in page-normalized units
+let strokeThickness = 4;  // screen px at current zoom, normalized on save
 
 // ── Erase state ───────────────────────────────────────────
 const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
@@ -576,81 +576,26 @@ function redrawAnnotations() {
   for (const stroke of strokes) drawStroke(stroke);
 }
 
-// Draw a single stroke with pressure-sensitive width and taper
+// Draw a single stroke as a simple fixed-width polyline
 function drawStroke(stroke) {
   if (!stroke.points || stroke.points.length < 2) return;
-  const pts      = stroke.points;
-  const baseW    = stroke.thickness * currentScale();
-  const n        = pts.length;
-  // Taper ramp: first/last N points fade in/out
-  const taperLen = Math.min(6, Math.floor(n * 0.2));
-
   annCtx.save();
-  annCtx.fillStyle = stroke.color || '#2563eb';
-
-  for (let i = 0; i < n - 1; i++) {
-    const p1 = toPx(pts[i].x,     pts[i].y);
-    const p2 = toPx(pts[i+1].x,   pts[i+1].y);
-    const pr1 = pts[i].pressure   ?? 1.0;
-    const pr2 = pts[i+1].pressure ?? 1.0;
-
-    // Taper multiplier: ramp in at start, ramp out at end
-    const t1 = i < taperLen               ? (i + 1) / (taperLen + 1)       : 1;
-    const t2 = i >= n - 1 - taperLen      ? (n - 1 - i) / (taperLen + 1)   : 1;
-    const taper = Math.min(t1, t2);
-
-    const w1 = Math.max(0.4, baseW * pr1 * taper);
-    const w2 = Math.max(0.4, baseW * pr2 * taper);
-
-    // Direction vector
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-    const len = Math.sqrt(dx*dx + dy*dy);
-    if (len < 0.5) continue;
-    const nx = -dy / len;
-    const ny =  dx / len;
-
-    // Filled quad for this segment
-    annCtx.beginPath();
-    annCtx.moveTo(p1.x + nx * w1/2,  p1.y + ny * w1/2);
-    annCtx.lineTo(p2.x + nx * w2/2,  p2.y + ny * w2/2);
-    annCtx.lineTo(p2.x - nx * w2/2,  p2.y - ny * w2/2);
-    annCtx.lineTo(p1.x - nx * w1/2,  p1.y - ny * w1/2);
-    annCtx.closePath();
-    annCtx.fill();
-
-    // Filled circle at p1 joint to seal the gap between adjacent quads
-    annCtx.beginPath();
-    annCtx.arc(p1.x, p1.y, w1 / 2, 0, Math.PI * 2);
-    annCtx.fill();
-
-    // Also seal p2 on the last segment (end cap)
-    if (i === n - 2) {
-      annCtx.beginPath();
-      annCtx.arc(p2.x, p2.y, w2 / 2, 0, Math.PI * 2);
-      annCtx.fill();
-    }
+  annCtx.strokeStyle = stroke.color || '#2563eb';
+  annCtx.lineWidth   = Math.max(0.5, stroke.thickness * currentScale());
+  annCtx.lineCap     = 'round';
+  annCtx.lineJoin    = 'round';
+  annCtx.beginPath();
+  const p0 = toPx(stroke.points[0].x, stroke.points[0].y);
+  annCtx.moveTo(p0.x, p0.y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    const p = toPx(stroke.points[i].x, stroke.points[i].y);
+    annCtx.lineTo(p.x, p.y);
   }
-
+  annCtx.stroke();
   annCtx.restore();
 }
 
-// rAF handle so we only redraw once per frame even if coalescedEvents
-// delivers many points per pointermove.
-let _rafPending = false;
-let _liveStroke = null;
 
-function scheduleIncrementalDraw(stroke) {
-  _liveStroke = stroke;
-  if (_rafPending) return;
-  _rafPending = true;
-  requestAnimationFrame(() => {
-    _rafPending = false;
-    if (!_liveStroke) return;
-    redrawAnnotations();        // committed strokes
-    drawStroke(_liveStroke);    // live stroke on top
-  });
-}
 
 // ─── Pointer events on the annotation canvas ──────────────
 annCanvas.addEventListener('pointerdown', e => {
@@ -664,7 +609,6 @@ annCanvas.addEventListener('pointerdown', e => {
 
   if (mode === 'draw') {
     const norm = toNorm(e.clientX, e.clientY);
-    norm.pressure = (e.pointerType === 'pen' && e.pressure > 0) ? e.pressure : 1.0;
     currentStroke = {
       thickness: strokeThickness / currentScale(),  // page-normalized: screenPx / currentScale
       color: '#2563eb',
@@ -680,22 +624,20 @@ annCanvas.addEventListener('pointermove', e => {
   if (!e.buttons) return;
 
   if (mode === 'draw' && currentStroke) {
-    // getCoalescedEvents() returns all hardware samples since last event
-    // (up to 200-400Hz on Windows Ink digitizers vs ~60Hz without it).
-    // Falls back gracefully to the single event if not supported.
-    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const ce of events) {
-      const norm = toNorm(ce.clientX, ce.clientY);
-      // Light 2-point smoothing to remove digitizer jitter without adding lag
-      const prev = currentStroke.points[currentStroke.points.length - 1];
-      if (prev) {
-        norm.x = norm.x * 0.7 + prev.x * 0.3;
-        norm.y = norm.y * 0.7 + prev.y * 0.3;
-      }
-      norm.pressure = (ce.pointerType === 'pen' && ce.pressure > 0) ? ce.pressure : 1.0;
-      currentStroke.points.push(norm);
-    }
-    scheduleIncrementalDraw(currentStroke);
+    const norm = toNorm(e.clientX, e.clientY);
+    currentStroke.points.push(norm);
+    // Incremental: extend the path by just the last segment — no full redraw
+    const pts = currentStroke.points;
+    const p1  = toPx(pts[pts.length - 2].x, pts[pts.length - 2].y);
+    const p2  = toPx(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    annCtx.strokeStyle = currentStroke.color || '#2563eb';
+    annCtx.lineWidth   = Math.max(0.5, currentStroke.thickness * currentScale());
+    annCtx.lineCap     = 'round';
+    annCtx.lineJoin    = 'round';
+    annCtx.beginPath();
+    annCtx.moveTo(p1.x, p1.y);
+    annCtx.lineTo(p2.x, p2.y);
+    annCtx.stroke();
   } else if (mode === 'erase') {
     eraseAt(e.clientX, e.clientY);
   }
@@ -704,21 +646,17 @@ annCanvas.addEventListener('pointermove', e => {
 annCanvas.addEventListener('pointerup', async e => {
   if (e.pointerType === 'touch') return;
   if (mode === 'draw' && currentStroke) {
-    _liveStroke = null;
     if (currentStroke.points.length >= 2) {
       if (!annotations[currentPage]) annotations[currentPage] = [];
       annotations[currentPage].push(currentStroke);
       await saveAnnotations();
-      redrawAnnotations();   // final committed redraw
-    } else {
-      redrawAnnotations();
     }
     currentStroke = null;
+    redrawAnnotations();
   }
 });
 
 annCanvas.addEventListener('pointercancel', () => {
-  _liveStroke = null;
   currentStroke = null;
   redrawAnnotations();
 });
