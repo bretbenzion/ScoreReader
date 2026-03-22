@@ -293,7 +293,7 @@
 
       <!-- Thickness slider (visible in draw/erase mode) -->
       <div id="thickness-wrap">
-        <input type="range" id="tb-thickness" min="1" max="20" value="3" step="0.5"
+        <input type="range" id="tb-thickness" min="1" max="20" value="4" step="0.5"
           oninput="onThicknessChange()" title="Stroke thickness">
       </div>
 
@@ -391,7 +391,7 @@ let panScrollX = 0, panScrollY = 0;
 // During drawing, currentStroke accumulates raw points then gets committed.
 let annotations   = {};   // in-memory store
 let currentStroke = null; // stroke being drawn right now
-let strokeThickness = 3;  // physical screen px at current zoom; stored in page-normalized units
+let strokeThickness = 4;  // physical screen px at current zoom; stored in page-normalized units
 
 // ── Erase state ───────────────────────────────────────────
 const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
@@ -402,11 +402,7 @@ const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
 const pdfCanvas   = document.getElementById('pdf-canvas');
 const pdfCtx      = pdfCanvas.getContext('2d');
 const annCanvas   = document.getElementById('ann-canvas');
-const annCtx      = annCanvas.getContext('2d', { desynchronized: true });
-// Offscreen canvas holds committed strokes so live stroke redraws
-// don't have to repaint every saved stroke on every pointermove.
-const offCanvas   = document.createElement('canvas');
-const offCtx      = offCanvas.getContext('2d');
+const annCtx      = annCanvas.getContext('2d');
 const emptyState  = document.getElementById('empty-state');
 const loadingEl   = document.getElementById('loading');
 const zoomPill    = document.getElementById('zoom-pill');
@@ -543,9 +539,6 @@ async function renderPage() {
   annCanvas.style.width  = cssW + 'px';
   annCanvas.style.height = cssH + 'px';
 
-  // Offscreen canvas tracks same physical dimensions
-  offCanvas.width  = cssW * dpr;
-  offCanvas.height = cssH * dpr;
 
   renderTask = page.render({ canvasContext: pdfCtx, viewport });
   try { await renderTask.promise; }
@@ -574,32 +567,14 @@ function toPx(nx, ny) {
   };
 }
 
-// Redraw all saved strokes onto the offscreen canvas, then blit to annCanvas.
-// The offscreen canvas is the persistent "committed" layer; annCanvas is
-// what the user sees (offscreen + live stroke during drawing).
+// Redraw all committed strokes for the current page onto annCanvas
 function redrawAnnotations() {
   const dpr = window.devicePixelRatio || 1;
-
-  // Paint committed strokes onto offscreen
-  offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-  const strokes = annotations[currentPage] || [];
-  // Temporarily redirect drawStroke to offCtx
-  const savedCtx = _activeCtx;
-  _activeCtx = offCtx;
-  for (const stroke of strokes) drawStroke(stroke);
-  _activeCtx = savedCtx;
-
-  // Blit offscreen to visible canvas
-  annCtx.setTransform(1, 0, 0, 1, 0, 0);
-  annCtx.clearRect(0, 0, annCanvas.width, annCanvas.height);
-  annCtx.drawImage(offCanvas, 0, 0);
-  // Restore DPR transform for any subsequent direct draws
   annCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  annCtx.clearRect(0, 0, annCanvas.offsetWidth, annCanvas.offsetHeight);
+  const strokes = annotations[currentPage] || [];
+  for (const stroke of strokes) drawStroke(stroke);
 }
-
-// Active drawing context — switches between annCtx (live) and offCtx (committed)
-let _activeCtx = annCtx;
 
 // Draw a single stroke with pressure-sensitive width and taper
 function drawStroke(stroke) {
@@ -610,8 +585,8 @@ function drawStroke(stroke) {
   // Taper ramp: first/last N points fade in/out
   const taperLen = Math.min(6, Math.floor(n * 0.2));
 
-  _activeCtx.save();
-  _activeCtx.fillStyle = stroke.color || '#2563eb';
+  annCtx.save();
+  annCtx.fillStyle = stroke.color || '#2563eb';
 
   for (let i = 0; i < n - 1; i++) {
     const p1 = toPx(pts[i].x,     pts[i].y);
@@ -636,41 +611,45 @@ function drawStroke(stroke) {
     const ny =  dx / len;
 
     // Filled quad for this segment
-    _activeCtx.beginPath();
-    _activeCtx.moveTo(p1.x + nx * w1/2,  p1.y + ny * w1/2);
-    _activeCtx.lineTo(p2.x + nx * w2/2,  p2.y + ny * w2/2);
-    _activeCtx.lineTo(p2.x - nx * w2/2,  p2.y - ny * w2/2);
-    _activeCtx.lineTo(p1.x - nx * w1/2,  p1.y - ny * w1/2);
-    _activeCtx.closePath();
-    _activeCtx.fill();
+    annCtx.beginPath();
+    annCtx.moveTo(p1.x + nx * w1/2,  p1.y + ny * w1/2);
+    annCtx.lineTo(p2.x + nx * w2/2,  p2.y + ny * w2/2);
+    annCtx.lineTo(p2.x - nx * w2/2,  p2.y - ny * w2/2);
+    annCtx.lineTo(p1.x - nx * w1/2,  p1.y - ny * w1/2);
+    annCtx.closePath();
+    annCtx.fill();
 
     // Filled circle at p1 joint to seal the gap between adjacent quads
-    _activeCtx.beginPath();
-    _activeCtx.arc(p1.x, p1.y, w1 / 2, 0, Math.PI * 2);
-    _activeCtx.fill();
+    annCtx.beginPath();
+    annCtx.arc(p1.x, p1.y, w1 / 2, 0, Math.PI * 2);
+    annCtx.fill();
 
     // Also seal p2 on the last segment (end cap)
     if (i === n - 2) {
-      _activeCtx.beginPath();
-      _activeCtx.arc(p2.x, p2.y, w2 / 2, 0, Math.PI * 2);
-      _activeCtx.fill();
+      annCtx.beginPath();
+      annCtx.arc(p2.x, p2.y, w2 / 2, 0, Math.PI * 2);
+      annCtx.fill();
     }
   }
 
-  _activeCtx.restore();
+  annCtx.restore();
 }
 
-// Incremental draw: blit the pre-rendered offscreen (committed strokes)
-// then draw only the live stroke on top. Avoids repainting all saved
-// strokes on every pointermove event.
-function drawStrokeIncremental(stroke) {
-  const dpr = window.devicePixelRatio || 1;
-  annCtx.setTransform(1, 0, 0, 1, 0, 0);
-  annCtx.clearRect(0, 0, annCanvas.width, annCanvas.height);
-  annCtx.drawImage(offCanvas, 0, 0);           // blit committed layer
-  annCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  _activeCtx = annCtx;
-  drawStroke(stroke);                          // draw live stroke on top
+// rAF handle so we only redraw once per frame even if coalescedEvents
+// delivers many points per pointermove.
+let _rafPending = false;
+let _liveStroke = null;
+
+function scheduleIncrementalDraw(stroke) {
+  _liveStroke = stroke;
+  if (_rafPending) return;
+  _rafPending = true;
+  requestAnimationFrame(() => {
+    _rafPending = false;
+    if (!_liveStroke) return;
+    redrawAnnotations();        // committed strokes
+    drawStroke(_liveStroke);    // live stroke on top
+  });
 }
 
 // ─── Pointer events on the annotation canvas ──────────────
@@ -716,7 +695,7 @@ annCanvas.addEventListener('pointermove', e => {
       norm.pressure = (ce.pointerType === 'pen' && ce.pressure > 0) ? ce.pressure : 1.0;
       currentStroke.points.push(norm);
     }
-    drawStrokeIncremental(currentStroke);
+    scheduleIncrementalDraw(currentStroke);
   } else if (mode === 'erase') {
     eraseAt(e.clientX, e.clientY);
   }
@@ -725,17 +704,23 @@ annCanvas.addEventListener('pointermove', e => {
 annCanvas.addEventListener('pointerup', async e => {
   if (e.pointerType === 'touch') return;
   if (mode === 'draw' && currentStroke) {
+    _liveStroke = null;
     if (currentStroke.points.length >= 2) {
       if (!annotations[currentPage]) annotations[currentPage] = [];
       annotations[currentPage].push(currentStroke);
       await saveAnnotations();
+      redrawAnnotations();   // final committed redraw
+    } else {
+      redrawAnnotations();
     }
     currentStroke = null;
   }
 });
 
 annCanvas.addEventListener('pointercancel', () => {
+  _liveStroke = null;
   currentStroke = null;
+  redrawAnnotations();
 });
 
 // ─── Eraser ───────────────────────────────────────────────
