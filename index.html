@@ -201,14 +201,14 @@
 
     /* ─── Layers Panel ────────────────────────────────────── */
     #layers-backdrop {
-      display: none; position: fixed; inset: 0; z-index: 150;
+      display: none; position: fixed; inset: 0; bottom: var(--toolbar-h); z-index: 98;
       background: rgba(0,0,0,0.45);
     }
     #layers-backdrop.open { display: block; }
 
     #layers-panel {
       position: fixed; bottom: var(--toolbar-h); left: 0; right: 0;
-      z-index: 151; background: var(--surface);
+      z-index: 99; background: var(--surface);
       border-top: 1px solid var(--border);
       border-radius: 14px 14px 0 0;
       transform: translateY(100%);
@@ -674,7 +674,7 @@ async function renderPage() {
   const cssW = Math.floor(viewport.width);
   const cssH = Math.floor(viewport.height);
 
-  for (const [cv] of [[pdfCanvas,pdfCtx],[hlCanvas,hlCtx],[annCanvas,annCtx]]) {
+  for (const cv of [pdfCanvas, hlCanvas, annCanvas]) {
     cv.width = cssW * dpr; cv.height = cssH * dpr;
     cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
   }
