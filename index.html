@@ -64,7 +64,12 @@
     #scroll-spacer { flex: 1; min-height: 0; }
 
     /* ─── Canvas stack ────────────────────────────────────── */
-    #canvas-wrap { position: relative; display: block; flex-shrink: 0; }
+    /* clip-wrap clips canvas-wrap to show only top or bottom half in half-page mode */
+    #clip-wrap {
+      position: relative; display: block; flex-shrink: 0; overflow: hidden;
+    }
+    /* canvas-wrap is absolute inside clip-wrap so top offset works for half-page */
+    #canvas-wrap { position: absolute; top: 0; left: 0; display: block; }
 
     #pdf-canvas {
       display: block;
@@ -335,10 +340,12 @@
     <div id="viewer-bg"></div>
     <div id="scroll-inner">
       <div id="scroll-spacer"></div>
-      <div id="canvas-wrap">
-        <canvas id="pdf-canvas"></canvas>
-        <canvas id="hl-canvas"></canvas>
-        <canvas id="ann-canvas"></canvas>
+      <div id="clip-wrap">
+        <div id="canvas-wrap">
+          <canvas id="pdf-canvas"></canvas>
+          <canvas id="hl-canvas"></canvas>
+          <canvas id="ann-canvas"></canvas>
+        </div>
       </div>
     </div>
   </div>
@@ -409,6 +416,11 @@
       </button>
 
       <div class="tb-divider"></div>
+
+      <!-- Half-page -->
+      <button class="tb-btn" id="tb-half" data-tip="Half Page (V)" onclick="toggleHalfPage()" disabled>
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="3" x2="12" y2="12"/></svg>
+      </button>
 
       <!-- Pan -->
       <button class="tb-btn" id="tb-pan" data-tip="Pan (P)" onclick="setMode('pan')" disabled>
@@ -545,6 +557,10 @@ let layerPanelTab  = 'pen'; // 'pen' | 'hl'
 let annotations   = {};
 let currentStroke = null;
 let strokeThickness = 3;
+
+// ── Half-page state ──────────────────────────────────────
+let halfPageMode = false;
+let halfPageSide = 'top'; // 'top' | 'bottom'
 let layerIdCounter  = 1;
 
 // ═══════════════════════════════════════════════════════════
@@ -648,6 +664,7 @@ async function openFile(file) {
     await computeFitScale();
     await renderPage();
     redrawAnnotations();
+    applyHalfPageClip();
     updateUI(); updateLayerDots();
     toast(`${file.name}  ·  ${totalPages} page${totalPages > 1 ? 's' : ''}`);
   } catch (err) {
@@ -690,6 +707,72 @@ async function renderPage() {
   try { await renderTask.promise; }
   catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); }
   renderTask = null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// HALF-PAGE CLIPPING
+// ═══════════════════════════════════════════════════════════
+
+function applyHalfPageClip() {
+  const clipWrap   = document.getElementById('clip-wrap');
+  const canvasWrap = document.getElementById('canvas-wrap');
+  const canvasW    = pdfCanvas.offsetWidth;
+  const canvasH    = pdfCanvas.offsetHeight;
+
+  // clip-wrap must always carry the canvas width so scroll-inner sizes correctly
+  clipWrap.style.width = canvasW + 'px';
+
+  if (!halfPageMode || !pdfDoc) {
+    clipWrap.style.height   = canvasH + 'px';
+    canvasWrap.style.top    = '0px';
+  } else {
+    const halfH = Math.floor(canvasH / 2);
+    clipWrap.style.height = halfH + 'px';
+    canvasWrap.style.top  = halfPageSide === 'top' ? '0px' : '-' + halfH + 'px';
+  }
+}
+
+function toggleHalfPage() {
+  if (!pdfDoc) return;
+  halfPageMode = !halfPageMode;
+  halfPageSide = 'top';
+  document.getElementById('tb-half').classList.toggle('active', halfPageMode);
+  applyHalfPageClip();
+  updateUI();
+  if (halfPageMode) toast('Half-page mode on  ·  V to toggle');
+}
+
+// Half-page navigation: cycles top→bottom→next page top→...
+async function halfPageAdvance() {
+  if (halfPageSide === 'top') {
+    halfPageSide = 'bottom';
+    applyHalfPageClip();
+  } else {
+    // Move to next page top
+    if (currentPage >= totalPages) return;
+    halfPageSide = 'top';
+    currentPage++;
+    updateUI();
+    await renderPage();
+    redrawAnnotations();
+    applyHalfPageClip();
+  }
+}
+
+async function halfPageRetreat() {
+  if (halfPageSide === 'bottom') {
+    halfPageSide = 'top';
+    applyHalfPageClip();
+  } else {
+    // Move to prev page bottom
+    if (currentPage <= 1) return;
+    halfPageSide = 'bottom';
+    currentPage--;
+    updateUI();
+    await renderPage();
+    redrawAnnotations();
+    applyHalfPageClip();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1129,6 +1212,10 @@ function changeThickness(delta) {
 // ═══════════════════════════════════════════════════════════
 async function changePage(delta) {
   if (!pdfDoc) return;
+  if (halfPageMode) {
+    if (delta > 0) { await halfPageAdvance(); return; }
+    else           { await halfPageRetreat(); return; }
+  }
   const next = currentPage + delta;
   if (next < 1 || next > totalPages) return;
   currentPage = next;
@@ -1136,6 +1223,7 @@ async function changePage(delta) {
   updateUI();
   await renderPage();
   redrawAnnotations();
+  applyHalfPageClip();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1151,6 +1239,7 @@ async function changeZoom(delta) {
   const oldH = pdfCanvas.offsetHeight || 1;
   zoomLevel = nz; updateUI();
   await renderPage(); redrawAnnotations();
+  applyHalfPageClip();
   viewer.scrollLeft = cx * (pdfCanvas.offsetWidth/oldW)  - viewer.clientWidth/2;
   viewer.scrollTop  = cy * (pdfCanvas.offsetHeight/oldH) - viewer.clientHeight/2;
 }
@@ -1160,6 +1249,7 @@ async function fitToWidth() {
   await computeFitScale();
   zoomLevel = 0;
   await renderPage(); redrawAnnotations();
+  applyHalfPageClip();
   viewer.scrollTo(0, viewer.scrollHeight);
   updateUI();
 }
@@ -1172,6 +1262,7 @@ async function rotatePage() {
   rotation = (rotation + 90) % 360;
   await computeFitScale(); zoomLevel = 0;
   await renderPage(); redrawAnnotations();
+  applyHalfPageClip();
   viewer.scrollTo(0, viewer.scrollHeight); updateUI();
 }
 
@@ -1234,6 +1325,7 @@ function updateUI() {
   document.getElementById('tb-clear').disabled   = !has;
   document.getElementById('tb-pan').disabled     = !has;
   document.getElementById('tb-rotate').disabled  = !has;
+  document.getElementById('tb-half').disabled    = !has;
   zoomPill.disabled = !has;
 }
 
@@ -1280,6 +1372,7 @@ document.addEventListener('keydown', e => {
     case 'p': case 'P': if (pdfDoc) setMode('pan');   break;
     case 'l': case 'L': if (pdfDoc) toggleLayersPanel(); break;
     case 'x': case 'X': if (pdfDoc) clearPage();      break;
+    case 'v': case 'V': if (pdfDoc) toggleHalfPage(); break;
     case 'o': case 'O': document.getElementById('file-input').click(); break;
   }
 });
@@ -1290,10 +1383,10 @@ document.addEventListener('keydown', e => {
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(async () => { if (pdfDoc) { await fitToWidth(); redrawAnnotations(); } }, 150);
+  resizeTimer = setTimeout(async () => { if (pdfDoc) { await fitToWidth(); redrawAnnotations(); applyHalfPageClip(); } }, 150);
 });
 screen.orientation?.addEventListener('change', () => {
-  if (pdfDoc) setTimeout(async () => { await fitToWidth(); redrawAnnotations(); }, 250);
+  if (pdfDoc) setTimeout(async () => { await fitToWidth(); redrawAnnotations(); applyHalfPageClip(); }, 250);
 });
 
 // ═══════════════════════════════════════════════════════════
