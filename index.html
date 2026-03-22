@@ -45,9 +45,15 @@
     #viewer {
       flex: 1;
       position: relative;
-      overflow: auto;
+      overflow: hidden;        /* default: no scroll, no pan */
+      touch-action: none;      /* block OS-level scroll/pinch by default */
       scrollbar-width: thin;
       scrollbar-color: #333 transparent;
+    }
+    /* Pan mode re-enables scroll */
+    #viewer.pan-mode {
+      overflow: auto;
+      touch-action: auto;
     }
     #viewer::-webkit-scrollbar       { width: 6px; height: 6px; }
     #viewer::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
@@ -99,13 +105,6 @@
     #viewer.erase-mode  #ann-canvas { pointer-events: auto; cursor: cell; }
     #viewer.pan-mode               { cursor: grab; }
     #viewer.pan-mode.is-panning    { cursor: grabbing; }
-
-    /* Lock scroll + pinch-zoom while pen is active */
-    #viewer.draw-mode,
-    #viewer.erase-mode {
-      overflow: hidden;
-      touch-action: none;
-    }
 
     /* Prevent browser hijacking pen strokes as scroll gestures */
     #ann-canvas { touch-action: none; }
@@ -392,7 +391,7 @@ let panScrollX = 0, panScrollY = 0;
 // During drawing, currentStroke accumulates raw points then gets committed.
 let annotations   = {};   // in-memory store
 let currentStroke = null; // stroke being drawn right now
-let strokeThickness = 3;  // px at fit-scale=1 (normalized on save)
+let strokeThickness = 2;  // px at fit-scale=1 (normalized on save); scales down as zoom increases
 
 // ── Erase state ───────────────────────────────────────────
 const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
@@ -587,7 +586,10 @@ function drawStroke(stroke) {
   annCtx.save();
   annCtx.strokeStyle = stroke.color || '#2563eb';
   // Scale thickness: stored at fitScale=1, rendered at currentScale
-  annCtx.lineWidth   = stroke.thickness * currentScale();
+  // Thickness stored normalized to fitScale. Render at fitScale but
+  // divide by zoom factor so strokes get thinner as you zoom in.
+  const zf1 = Math.pow(ZOOM_STEP, zoomLevel);
+  annCtx.lineWidth   = Math.max(0.5, (stroke.thickness * fitScale) / zf1);
   annCtx.lineCap     = 'round';
   annCtx.lineJoin    = 'round';
 
@@ -611,7 +613,8 @@ function drawStrokeIncremental(stroke) {
 
   annCtx.save();
   annCtx.strokeStyle = stroke.color || '#2563eb';
-  annCtx.lineWidth   = stroke.thickness * currentScale();
+  const zf2 = Math.pow(ZOOM_STEP, zoomLevel);
+  annCtx.lineWidth   = Math.max(0.5, (stroke.thickness * fitScale) / zf2);
   annCtx.lineCap     = 'round';
   annCtx.lineJoin    = 'round';
   annCtx.beginPath();
@@ -634,7 +637,7 @@ annCanvas.addEventListener('pointerdown', e => {
   if (mode === 'draw') {
     const norm = toNorm(e.clientX, e.clientY);
     currentStroke = {
-      thickness: strokeThickness / fitScale,  // store normalized to fit-scale
+      thickness: strokeThickness / fitScale,  // normalized: rendered width = thickness*fitScale/zoomFactor
       color: '#2563eb',
       points: [norm]
     };
