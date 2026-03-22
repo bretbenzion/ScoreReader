@@ -485,7 +485,7 @@ const ZOOM_MAX  =  8;
 const MAX_LAYERS = 10;
 const ERASE_RADIUS_NORM = 0.015;
 const HL_ALPHA = 0.35;
-const HL_WIDTH_MULT = 4; // highlighter is 4× the stroke thickness
+const HL_WIDTH_MULT = 8; // highlighter is 8× the stroke thickness
 
 const PALETTE = [
   '#1a1a2e','#2c2c2c','#4a4a4a','#ffffff',
@@ -514,6 +514,12 @@ let pdfHash     = null;
 let fitScale  = 1;
 let zoomLevel = 0;
 function currentScale() { return fitScale * Math.pow(ZOOM_STEP, zoomLevel); }
+// Stroke render scale: full fit-scale but only sqrt of zoom factor,
+// so strokes don't grow/shrink as aggressively when zooming in/out.
+function strokeScale() {
+  const zoomFactor = Math.pow(ZOOM_STEP, zoomLevel);
+  return fitScale * Math.sqrt(zoomFactor);
+}
 
 // mode: 'none' | 'draw' | 'hl' | 'erase' | 'pan'
 let mode = 'none';
@@ -698,17 +704,17 @@ function toPx(nx, ny, canvas) {
 }
 
 // Draw stroke onto a given ctx/canvas
-function drawStrokeOn(ctx, canvas, stroke) {
+function drawStrokeOn(ctx, canvas, stroke, colorOverride) {
   if (!stroke.points || stroke.points.length < 2) return;
   ctx.save();
   if (stroke.isHl) {
     ctx.globalAlpha = HL_ALPHA;
-    ctx.lineWidth   = Math.max(1, stroke.thickness * currentScale() * HL_WIDTH_MULT);
+    ctx.lineWidth   = Math.max(1, stroke.thickness * strokeScale() * HL_WIDTH_MULT);
   } else {
     ctx.globalAlpha = 1;
-    ctx.lineWidth   = Math.max(0.5, stroke.thickness * currentScale());
+    ctx.lineWidth   = Math.max(0.5, stroke.thickness * strokeScale());
   }
-  ctx.strokeStyle = stroke.color || '#2563eb';
+  ctx.strokeStyle = colorOverride || stroke.color || '#2563eb';
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
   const p0 = toPx(stroke.points[0].x, stroke.points[0].y, canvas);
@@ -737,13 +743,13 @@ function redrawAnnotations() {
   for (const layer of layers.hl) {
     if (!layer.visible) continue;
     const strokes = pageAnns[layer.id] || [];
-    for (const s of strokes) drawStrokeOn(hlCtx, hlCanvas, s);
+    for (const s of strokes) drawStrokeOn(hlCtx, hlCanvas, s, layer.color);
   }
   // Draw pen layers on top
   for (const layer of layers.pen) {
     if (!layer.visible) continue;
     const strokes = pageAnns[layer.id] || [];
-    for (const s of strokes) drawStrokeOn(annCtx, annCanvas, s);
+    for (const s of strokes) drawStrokeOn(annCtx, annCanvas, s, layer.color);
   }
 }
 
@@ -804,10 +810,10 @@ function setupCanvasPointer(canvas) {
       ctx.save();
       if (currentStroke.isHl) {
         ctx.globalAlpha = HL_ALPHA;
-        ctx.lineWidth   = Math.max(1, currentStroke.thickness * currentScale() * HL_WIDTH_MULT);
+        ctx.lineWidth   = Math.max(1, currentStroke.thickness * strokeScale() * HL_WIDTH_MULT);
       } else {
         ctx.globalAlpha = 1;
-        ctx.lineWidth   = Math.max(0.5, currentStroke.thickness * currentScale());
+        ctx.lineWidth   = Math.max(0.5, currentStroke.thickness * strokeScale());
       }
       ctx.strokeStyle = currentStroke.color;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
