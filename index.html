@@ -22,6 +22,7 @@
       --text:      #c8c8c8;
       --accent:    #5b8cf7;
       --accent-h:  #7aaeff;
+      --danger:    #e05c5c;
       --toolbar-h: 62px;
       --nav-w:     64px;
       --font-ui:   'IBM Plex Sans', system-ui, sans-serif;
@@ -38,11 +39,7 @@
       user-select: none;
     }
 
-    #app {
-      display: flex;
-      flex-direction: column;
-      height: 100dvh;
-    }
+    #app { display: flex; flex-direction: column; height: 100dvh; }
 
     /* ─── Viewer ──────────────────────────────────────────── */
     #viewer {
@@ -55,48 +52,31 @@
     #viewer::-webkit-scrollbar       { width: 6px; height: 6px; }
     #viewer::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
-    /* Grid texture — fixed so it doesn't scroll */
     #viewer-bg {
-      position: fixed;
-      inset: 0;
-      bottom: var(--toolbar-h);
+      position: fixed; inset: 0; bottom: var(--toolbar-h);
       background-image:
         linear-gradient(var(--border) 1px, transparent 1px),
         linear-gradient(90deg, var(--border) 1px, transparent 1px);
       background-size: 32px 32px;
-      opacity: 0.35;
-      pointer-events: none;
-      z-index: 0;
+      opacity: 0.35; pointer-events: none; z-index: 0;
     }
 
-    /*
-      Column flex. min-height:100% lets the spacer stretch.
-      width:max-content means the container grows exactly as wide
-      as the canvas — so scrollLeft can always reach 0.
-      min-width:100% fills the viewer when canvas is narrow.
-    */
     #scroll-inner {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-      width: max-content;
-      min-width: 100%;
-      padding: 16px 16px 0;
-      position: relative;
-      z-index: 1;
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 100%; width: max-content; min-width: 100%;
+      padding: 16px 16px 0; position: relative; z-index: 1;
     }
 
-    /* Pushes canvas to the bottom of the scroll area */
     #scroll-spacer { flex: 1; min-height: 0; }
 
-    /* ─── Canvas wrap ─────────────────────────────────────── */
+    /* ─── Canvas stack ────────────────────────────────────── */
     #canvas-wrap {
       position: relative;
       display: block;
       flex-shrink: 0;
     }
 
+    /* PDF canvas — bottom of stack */
     #pdf-canvas {
       display: block;
       box-shadow:
@@ -105,21 +85,26 @@
         0 2px 8px rgba(0,0,0,0.5);
     }
 
-    #viewer.pan-mode            { cursor: grab; }
-    #viewer.pan-mode.is-panning { cursor: grabbing; }
+    /* Annotation canvas — exactly overlaid, pointer events controlled by mode */
+    #ann-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      display: block;
+      /* Default: pass all events through so scroll/pan work normally */
+      pointer-events: none;
+    }
+
+    /* Draw mode: annotation canvas captures all pointer events */
+    #viewer.draw-mode   #ann-canvas { pointer-events: auto; cursor: crosshair; }
+    #viewer.erase-mode  #ann-canvas { pointer-events: auto; cursor: cell; }
+    #viewer.pan-mode               { cursor: grab; }
+    #viewer.pan-mode.is-panning    { cursor: grabbing; }
 
     /* ─── Empty state ─────────────────────────────────────── */
     #empty-state {
-      position: fixed;
-      inset: 0;
-      bottom: var(--toolbar-h);
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      pointer-events: none;
+      position: fixed; inset: 0; bottom: var(--toolbar-h); z-index: 10;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 20px; pointer-events: none;
     }
     #empty-state > * { pointer-events: auto; }
     #empty-state.hidden { display: none; }
@@ -129,63 +114,36 @@
     .empty-hint  { font-size: 0.78rem; color: #333; letter-spacing: 0.02em; }
 
     #open-main-btn {
-      background: var(--accent);
-      color: #fff;
-      border-radius: 8px;
-      padding: 12px 28px;
-      font-family: var(--font-ui);
-      font-size: 0.9rem;
-      font-weight: 500;
-      cursor: pointer;
-      letter-spacing: 0.03em;
-      transition: background 0.15s, transform 0.1s;
-      display: inline-block;
+      background: var(--accent); color: #fff; border-radius: 8px;
+      padding: 12px 28px; font-family: var(--font-ui); font-size: 0.9rem;
+      font-weight: 500; cursor: pointer; letter-spacing: 0.03em;
+      transition: background 0.15s, transform 0.1s; display: inline-block;
     }
     #open-main-btn:hover  { background: var(--accent-h); }
     #open-main-btn:active { transform: scale(0.97); }
 
     /* ─── Drag overlay ────────────────────────────────────── */
     #drag-overlay {
-      position: fixed;
-      inset: 0;
-      bottom: var(--toolbar-h);
-      z-index: 20;
-      background: rgba(91,140,247,0.08);
-      border: 2px dashed var(--accent);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.9rem;
-      color: var(--accent);
-      letter-spacing: 0.04em;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.15s;
+      position: fixed; inset: 0; bottom: var(--toolbar-h); z-index: 20;
+      background: rgba(91,140,247,0.08); border: 2px dashed var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.9rem; color: var(--accent); letter-spacing: 0.04em;
+      opacity: 0; pointer-events: none; transition: opacity 0.15s;
     }
     #drag-overlay.active { opacity: 1; pointer-events: auto; }
 
     /* ─── Loading ─────────────────────────────────────────── */
     #loading {
-      position: fixed;
-      inset: 0;
-      bottom: var(--toolbar-h);
-      z-index: 30;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      background: rgba(20,20,20,0.75);
-      backdrop-filter: blur(4px);
+      position: fixed; inset: 0; bottom: var(--toolbar-h); z-index: 30;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 14px;
+      background: rgba(20,20,20,0.75); backdrop-filter: blur(4px);
     }
     #loading.hidden { display: none; }
-
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
-      width: 28px; height: 28px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
+      width: 28px; height: 28px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
       animation: spin 0.75s linear infinite;
     }
     .loading-text { font-size: 0.82rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
@@ -195,124 +153,87 @@
       height: var(--toolbar-h);
       background: var(--surface);
       border-top: 1px solid var(--border);
-      display: flex;
-      align-items: stretch;
-      flex-shrink: 0;
-      z-index: 100;
+      display: flex; align-items: stretch; flex-shrink: 0; z-index: 100;
     }
 
     .nav-btn {
-      width: var(--nav-w);
-      flex-shrink: 0;
-      background: none;
-      border: none;
-      color: var(--text);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.12s, color 0.12s;
+      width: var(--nav-w); flex-shrink: 0; background: none; border: none;
+      color: var(--text); cursor: pointer; display: flex; align-items: center;
+      justify-content: center; transition: background 0.12s, color 0.12s;
       position: relative;
     }
     #tb-prev { border-right: 1px solid var(--border); }
     #tb-next { border-left:  1px solid var(--border); }
-
-    .nav-btn svg {
-      width: 26px; height: 26px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2.2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
+    .nav-btn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
     .nav-btn:hover:not(:disabled)  { background: rgba(255,255,255,0.06); color: #fff; }
     .nav-btn:active:not(:disabled) { background: rgba(255,255,255,0.12); }
     .nav-btn:disabled               { color: #333; cursor: default; }
 
     #tb-center {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
-      padding: 0 4px;
-      overflow: hidden;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      gap: 2px; padding: 0 4px; overflow: hidden;
     }
 
     .tb-btn {
-      background: none;
-      border: none;
-      color: var(--text);
-      width: 38px;
-      height: 42px;
-      border-radius: 7px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.12s, color 0.12s;
-      flex-shrink: 0;
-      position: relative;
+      background: none; border: none; color: var(--text);
+      width: 38px; height: 42px; border-radius: 7px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s; flex-shrink: 0; position: relative;
     }
-    .tb-btn svg {
-      width: 17px; height: 17px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 1.7;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
+    .tb-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
     .tb-btn:hover:not(:disabled)  { background: rgba(255,255,255,0.07); color: #fff; }
     .tb-btn:active:not(:disabled) { background: rgba(255,255,255,0.12); }
     .tb-btn:disabled               { color: #333; cursor: default; }
     .tb-btn.active                 { color: var(--accent); }
+    .tb-btn.active-danger          { color: var(--danger); }
 
-    .tb-divider {
-      width: 1px; height: 24px;
-      background: var(--border);
-      margin: 0 4px;
+    .tb-divider { width: 1px; height: 24px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
+
+    /* Thickness slider — hidden until pen mode active */
+    #thickness-wrap {
+      display: flex; align-items: center; gap: 4px;
+      overflow: hidden; max-width: 0; opacity: 0;
+      transition: max-width 0.2s, opacity 0.2s;
       flex-shrink: 0;
     }
+    #thickness-wrap.visible { max-width: 80px; opacity: 1; }
 
+    #tb-thickness {
+      -webkit-appearance: none; appearance: none;
+      width: 60px; height: 3px;
+      background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    #tb-thickness::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      background: var(--accent); border-radius: 50%; cursor: pointer;
+    }
+    #tb-thickness::-moz-range-thumb {
+      width: 14px; height: 14px; background: var(--accent);
+      border-radius: 50%; border: none; cursor: pointer;
+    }
+
+    /* Tooltips */
     .tb-btn::after, .nav-btn::after {
       content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: #2a2a2a;
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 0.7rem;
-      padding: 3px 7px;
-      border-radius: 4px;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.15s;
-      z-index: 300;
+      position: absolute; bottom: calc(100% + 8px); left: 50%;
+      transform: translateX(-50%); background: #2a2a2a;
+      border: 1px solid var(--border); color: var(--text);
+      font-size: 0.7rem; padding: 3px 7px; border-radius: 4px;
+      white-space: nowrap; pointer-events: none; opacity: 0;
+      transition: opacity 0.15s; z-index: 300;
     }
     .tb-btn:hover:not(:disabled)::after,
     .nav-btn:hover:not(:disabled)::after { opacity: 1; }
 
     /* ─── Toast ───────────────────────────────────────────── */
     #toast {
-      position: fixed;
-      bottom: calc(var(--toolbar-h) + 12px);
-      left: 50%;
+      position: fixed; bottom: calc(var(--toolbar-h) + 12px); left: 50%;
       transform: translateX(-50%) translateY(8px);
-      background: rgba(30,30,30,0.95);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 0.8rem;
-      padding: 8px 16px;
-      border-radius: 6px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s, transform 0.2s;
-      z-index: 200;
-      white-space: nowrap;
-      letter-spacing: 0.02em;
+      background: rgba(30,30,30,0.95); border: 1px solid var(--border);
+      color: var(--text); font-size: 0.8rem; padding: 8px 16px;
+      border-radius: 6px; pointer-events: none; opacity: 0;
+      transition: opacity 0.2s, transform 0.2s; z-index: 200;
+      white-space: nowrap; letter-spacing: 0.02em;
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
@@ -320,51 +241,77 @@
 <body>
 
 <div id="app">
-
   <div id="viewer">
     <div id="viewer-bg"></div>
     <div id="scroll-inner">
       <div id="scroll-spacer"></div>
       <div id="canvas-wrap">
         <canvas id="pdf-canvas"></canvas>
+        <canvas id="ann-canvas"></canvas>
       </div>
     </div>
   </div>
 
   <div id="toolbar">
-    <button class="nav-btn" id="tb-prev" data-tip="Prev  (←)" onclick="changePage(-1)" disabled>
+    <button class="nav-btn" id="tb-prev" data-tip="Prev (←)" onclick="changePage(-1)" disabled>
       <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
 
     <div id="tb-center">
-      <label class="tb-btn" for="file-input" data-tip="Open PDF  (O)">
+      <!-- Open -->
+      <label class="tb-btn" for="file-input" data-tip="Open PDF (O)">
         <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
       </label>
 
       <div class="tb-divider"></div>
 
-      <button class="tb-btn" id="tb-zoom-out" data-tip="Zoom Out  (−)" onclick="changeZoom(-1)" disabled>
+      <!-- Zoom -->
+      <button class="tb-btn" id="tb-zoom-out" data-tip="Zoom Out (−)" onclick="changeZoom(-1)" disabled>
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
       </button>
-
-      <button class="tb-btn" id="zoom-pill" data-tip="Reset to Fit  (W)" onclick="fitToWidth()"
+      <button class="tb-btn" id="zoom-pill" data-tip="Reset Fit (W)" onclick="fitToWidth()"
         style="min-width:50px;font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);" disabled>—</button>
-
-      <button class="tb-btn" id="tb-zoom-in" data-tip="Zoom In  (=)" onclick="changeZoom(1)" disabled>
+      <button class="tb-btn" id="tb-zoom-in" data-tip="Zoom In (=)" onclick="changeZoom(1)" disabled>
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
       </button>
 
       <div class="tb-divider"></div>
 
-      <button class="tb-btn" id="tb-pan" data-tip="Pan Mode  (P)" onclick="togglePan()" disabled>
+      <!-- Draw -->
+      <button class="tb-btn" id="tb-draw" data-tip="Draw (D)" onclick="setMode('draw')" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </button>
+
+      <!-- Thickness slider (visible in draw/erase mode) -->
+      <div id="thickness-wrap">
+        <input type="range" id="tb-thickness" min="1" max="20" value="3"
+          oninput="onThicknessChange()" title="Stroke thickness">
+      </div>
+
+      <!-- Eraser -->
+      <button class="tb-btn" id="tb-erase" data-tip="Eraser (E)" onclick="setMode('erase')" disabled>
+        <svg viewBox="0 0 24 24"><path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><path d="M6.0 11.0 l7 7"/></svg>
+      </button>
+
+      <!-- Clear page annotations -->
+      <button class="tb-btn" id="tb-clear" data-tip="Clear Page (X)" onclick="clearPage()" disabled>
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+
+      <div class="tb-divider"></div>
+
+      <!-- Pan -->
+      <button class="tb-btn" id="tb-pan" data-tip="Pan (P)" onclick="setMode('pan')" disabled>
         <svg viewBox="0 0 24 24"><path d="M18 11V8a2 2 0 00-4 0v1a2 2 0 00-4 0V6a2 2 0 00-4 0v6l-1.5-2a1.5 1.5 0 00-2.5 1.5l3 5A6 6 0 0011 21h3a6 6 0 006-6v-3a1 1 0 00-2 0"/></svg>
       </button>
 
-      <button class="tb-btn" id="tb-rotate" data-tip="Rotate  (R)" onclick="rotatePage()" disabled>
+      <!-- Rotate -->
+      <button class="tb-btn" id="tb-rotate" data-tip="Rotate (R)" onclick="rotatePage()" disabled>
         <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
       </button>
 
-      <button class="tb-btn" id="tb-fs" data-tip="Fullscreen  (F)" onclick="toggleFullscreen()">
+      <!-- Fullscreen -->
+      <button class="tb-btn" id="tb-fs" data-tip="Fullscreen (F)" onclick="toggleFullscreen()">
         <svg viewBox="0 0 24 24" id="fs-icon-expand">
           <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
           <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -376,11 +323,10 @@
       </button>
     </div>
 
-    <button class="nav-btn" id="tb-next" data-tip="Next  (→)" onclick="changePage(1)" disabled>
+    <button class="nav-btn" id="tb-next" data-tip="Next (→)" onclick="changePage(1)" disabled>
       <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
     </button>
   </div>
-
 </div>
 
 <div id="empty-state">
@@ -404,41 +350,108 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-// ─── State ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
 let pdfDoc      = null;
 let currentPage = 1;
 let totalPages  = 0;
 let rotation    = 0;
 let renderTask  = null;
+let pdfHash     = null;   // content-hash key for IndexedDB
 
-// fitScale: exact scale making page width = viewer width - padding
-// zoomLevel: integer steps from fit; 0 = fit, ±n = ×/÷ ZOOM_STEP^n
 let fitScale  = 1;
 let zoomLevel = 0;
 const ZOOM_STEP = 1.25;
 const ZOOM_MIN  = -4;
 const ZOOM_MAX  =  8;
+function currentScale() { return fitScale * Math.pow(ZOOM_STEP, zoomLevel); }
 
-function currentScale() {
-  return fitScale * Math.pow(ZOOM_STEP, zoomLevel);
-}
+// ── Interaction mode: 'none' | 'draw' | 'erase' | 'pan' ──
+let mode = 'none';
 
-// ─── Pan state ────────────────────────────────────────────
-let panMode    = false;
+// ── Pan state ─────────────────────────────────────────────
 let isPanning  = false;
 let panStartX  = 0, panStartY  = 0;
 let panScrollX = 0, panScrollY = 0;
 
-// ─── Elements ─────────────────────────────────────────────
-const canvas      = document.getElementById('pdf-canvas');
-const ctx         = canvas.getContext('2d');
+// ── Annotation state ──────────────────────────────────────
+// annotations[pageNum] = [ stroke, stroke, … ]
+// stroke = { thickness, color, points: [{x,y}] }
+//   x, y are NORMALIZED (0–1) relative to the PDF page dimensions at scale=1
+// During drawing, currentStroke accumulates raw points then gets committed.
+let annotations   = {};   // in-memory store
+let currentStroke = null; // stroke being drawn right now
+let strokeThickness = 3;  // px at fit-scale=1 (normalized on save)
+
+// ── Erase state ───────────────────────────────────────────
+const ERASE_RADIUS_NORM = 0.015; // normalized radius for stroke erasure
+
+// ═══════════════════════════════════════════════════════════
+// ELEMENTS
+// ═══════════════════════════════════════════════════════════
+const pdfCanvas   = document.getElementById('pdf-canvas');
+const pdfCtx      = pdfCanvas.getContext('2d');
+const annCanvas   = document.getElementById('ann-canvas');
+const annCtx      = annCanvas.getContext('2d');
 const emptyState  = document.getElementById('empty-state');
 const loadingEl   = document.getElementById('loading');
 const zoomPill    = document.getElementById('zoom-pill');
 const dragOverlay = document.getElementById('drag-overlay');
 const viewer      = document.getElementById('viewer');
 
-// ─── File loading ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// INDEXEDDB
+// ═══════════════════════════════════════════════════════════
+const DB_NAME    = 'ScoreReader';
+const DB_VERSION = 1;
+const STORE      = 'annotations';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(STORE);
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function dbGet(key) {
+  if (!db) return null;
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function dbPut(key, value) {
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTENT HASH  (first 64 KB of file → SHA-1 hex)
+// ═══════════════════════════════════════════════════════════
+async function computeHash(arrayBuffer) {
+  const sample = arrayBuffer.slice(0, 65536);
+  const hashBuf = await crypto.subtle.digest('SHA-1', sample);
+  return Array.from(new Uint8Array(hashBuf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILE LOADING
+// ═══════════════════════════════════════════════════════════
 async function handleFileInput(e) {
   const file = e.target.files[0];
   e.target.value = '';
@@ -454,13 +467,20 @@ async function openFile(file) {
   emptyState.classList.add('hidden');
   try {
     const ab    = await file.arrayBuffer();
+    pdfHash     = await computeHash(ab);
     pdfDoc      = await pdfjsLib.getDocument({ data: ab }).promise;
     totalPages  = pdfDoc.numPages;
     currentPage = 1;
     rotation    = 0;
     zoomLevel   = 0;
+
+    // Load saved annotations for this PDF
+    const saved = await dbGet(pdfHash);
+    annotations = saved || {};
+
     await computeFitScale();
     await renderPage();
+    redrawAnnotations();
     updateUI();
     toast(`${file.name}  ·  ${totalPages} page${totalPages > 1 ? 's' : ''}`);
   } catch (err) {
@@ -472,16 +492,19 @@ async function openFile(file) {
   }
 }
 
-// ─── Fit scale ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// FIT SCALE
+// ═══════════════════════════════════════════════════════════
 async function computeFitScale() {
   if (!pdfDoc) return;
   const page = await pdfDoc.getPage(currentPage);
   const vp   = page.getViewport({ scale: 1, rotation });
-  // 32px total horizontal padding (16px each side in scroll-inner)
   fitScale   = (viewer.clientWidth - 32) / vp.width;
 }
 
-// ─── Rendering ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// RENDERING — PDF + annotation canvas sizing
+// ═══════════════════════════════════════════════════════════
 async function renderPage() {
   if (!pdfDoc) return;
   if (renderTask) { try { renderTask.cancel(); } catch {} renderTask = null; }
@@ -491,48 +514,259 @@ async function renderPage() {
   const dpr      = window.devicePixelRatio || 1;
   const viewport = page.getViewport({ scale, rotation });
 
-  canvas.width        = Math.floor(viewport.width  * dpr);
-  canvas.height       = Math.floor(viewport.height * dpr);
-  canvas.style.width  = Math.floor(viewport.width)  + 'px';
-  canvas.style.height = Math.floor(viewport.height) + 'px';
+  const cssW = Math.floor(viewport.width);
+  const cssH = Math.floor(viewport.height);
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // PDF canvas
+  pdfCanvas.width        = cssW * dpr;
+  pdfCanvas.height       = cssH * dpr;
+  pdfCanvas.style.width  = cssW + 'px';
+  pdfCanvas.style.height = cssH + 'px';
+  pdfCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  renderTask = page.render({ canvasContext: ctx, viewport });
+  // Annotation canvas — same CSS size, same physical size
+  annCanvas.width        = cssW * dpr;
+  annCanvas.height       = cssH * dpr;
+  annCanvas.style.width  = cssW + 'px';
+  annCanvas.style.height = cssH + 'px';
+
+  renderTask = page.render({ canvasContext: pdfCtx, viewport });
   try { await renderTask.promise; }
   catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); }
   renderTask = null;
 }
 
-// ─── Page navigation ──────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// ANNOTATION DRAWING
+// ═══════════════════════════════════════════════════════════
+
+// Convert pointer event position → normalized page coords (0–1)
+function toNorm(clientX, clientY) {
+  const rect = annCanvas.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left)  / rect.width,
+    y: (clientY - rect.top)   / rect.height
+  };
+}
+
+// Convert normalized coords → canvas CSS pixels for drawing
+function toPx(nx, ny) {
+  return {
+    x: nx * annCanvas.offsetWidth,
+    y: ny * annCanvas.offsetHeight
+  };
+}
+
+// Redraw all saved strokes for the current page onto annCanvas
+function redrawAnnotations() {
+  const dpr = window.devicePixelRatio || 1;
+  annCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  annCtx.clearRect(0, 0, annCanvas.offsetWidth, annCanvas.offsetHeight);
+
+  const strokes = annotations[currentPage] || [];
+  for (const stroke of strokes) {
+    drawStroke(stroke);
+  }
+}
+
+// Draw a single stroke object onto annCanvas
+function drawStroke(stroke) {
+  if (!stroke.points || stroke.points.length < 2) return;
+  const dpr = window.devicePixelRatio || 1;
+
+  annCtx.save();
+  annCtx.strokeStyle = stroke.color || '#2563eb';
+  // Scale thickness: stored at fitScale=1, rendered at currentScale
+  annCtx.lineWidth   = stroke.thickness * currentScale();
+  annCtx.lineCap     = 'round';
+  annCtx.lineJoin    = 'round';
+
+  annCtx.beginPath();
+  const p0 = toPx(stroke.points[0].x, stroke.points[0].y);
+  annCtx.moveTo(p0.x, p0.y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    const p = toPx(stroke.points[i].x, stroke.points[i].y);
+    annCtx.lineTo(p.x, p.y);
+  }
+  annCtx.stroke();
+  annCtx.restore();
+}
+
+// Draw the in-progress currentStroke incrementally (last two points)
+function drawStrokeIncremental(stroke) {
+  if (!stroke.points || stroke.points.length < 2) return;
+  const pts = stroke.points;
+  const p1  = toPx(pts[pts.length - 2].x, pts[pts.length - 2].y);
+  const p2  = toPx(pts[pts.length - 1].x, pts[pts.length - 1].y);
+
+  annCtx.save();
+  annCtx.strokeStyle = stroke.color || '#2563eb';
+  annCtx.lineWidth   = stroke.thickness * currentScale();
+  annCtx.lineCap     = 'round';
+  annCtx.lineJoin    = 'round';
+  annCtx.beginPath();
+  annCtx.moveTo(p1.x, p1.y);
+  annCtx.lineTo(p2.x, p2.y);
+  annCtx.stroke();
+  annCtx.restore();
+}
+
+// ─── Pointer events on the annotation canvas ──────────────
+annCanvas.addEventListener('pointerdown', e => {
+  // Only respond to pen or (in draw/erase mode) primary touch/mouse
+  // Touch is deliberately ignored so fingers can scroll
+  if (e.pointerType === 'touch') return;
+  if (mode !== 'draw' && mode !== 'erase') return;
+
+  annCanvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+
+  if (mode === 'draw') {
+    const norm = toNorm(e.clientX, e.clientY);
+    currentStroke = {
+      thickness: strokeThickness / fitScale,  // store normalized to fit-scale
+      color: '#2563eb',
+      points: [norm]
+    };
+  } else if (mode === 'erase') {
+    eraseAt(e.clientX, e.clientY);
+  }
+}, { passive: false });
+
+annCanvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch') return;
+  if (!e.buttons) return;
+
+  if (mode === 'draw' && currentStroke) {
+    const norm = toNorm(e.clientX, e.clientY);
+    currentStroke.points.push(norm);
+    drawStrokeIncremental(currentStroke);
+  } else if (mode === 'erase') {
+    eraseAt(e.clientX, e.clientY);
+  }
+});
+
+annCanvas.addEventListener('pointerup', async e => {
+  if (e.pointerType === 'touch') return;
+  if (mode === 'draw' && currentStroke) {
+    if (currentStroke.points.length >= 2) {
+      if (!annotations[currentPage]) annotations[currentPage] = [];
+      annotations[currentPage].push(currentStroke);
+      await saveAnnotations();
+    }
+    currentStroke = null;
+  }
+});
+
+annCanvas.addEventListener('pointercancel', () => {
+  currentStroke = null;
+});
+
+// ─── Eraser ───────────────────────────────────────────────
+function eraseAt(clientX, clientY) {
+  const pos = toNorm(clientX, clientY);
+  const page = annotations[currentPage];
+  if (!page) return;
+
+  const before = page.length;
+  // Remove any stroke that has a point within ERASE_RADIUS_NORM of pos
+  annotations[currentPage] = page.filter(stroke => {
+    return !stroke.points.some(pt => {
+      const dx = pt.x - pos.x;
+      const dy = pt.y - pos.y;
+      return Math.sqrt(dx*dx + dy*dy) < ERASE_RADIUS_NORM;
+    });
+  });
+
+  if (annotations[currentPage].length !== before) {
+    redrawAnnotations();
+    saveAnnotations();
+  }
+}
+
+// ─── Clear page ───────────────────────────────────────────
+async function clearPage() {
+  if (!pdfDoc) return;
+  if (!annotations[currentPage] || annotations[currentPage].length === 0) {
+    toast('No annotations on this page.');
+    return;
+  }
+  annotations[currentPage] = [];
+  redrawAnnotations();
+  await saveAnnotations();
+  toast('Page annotations cleared.');
+}
+
+// ─── Persist ──────────────────────────────────────────────
+async function saveAnnotations() {
+  if (!pdfHash) return;
+  try {
+    await dbPut(pdfHash, annotations);
+  } catch (e) {
+    console.error('Failed to save annotations:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODE MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+function setMode(newMode) {
+  if (!pdfDoc) return;
+  // Toggle off if already active
+  if (mode === newMode) newMode = 'none';
+  mode = newMode;
+
+  viewer.classList.toggle('draw-mode',  mode === 'draw');
+  viewer.classList.toggle('erase-mode', mode === 'erase');
+  viewer.classList.toggle('pan-mode',   mode === 'pan');
+
+  document.getElementById('tb-draw').classList.toggle('active',        mode === 'draw');
+  document.getElementById('tb-erase').classList.toggle('active-danger', mode === 'erase');
+  document.getElementById('tb-pan').classList.toggle('active',          mode === 'pan');
+
+  // Show thickness slider in draw or erase mode
+  document.getElementById('thickness-wrap').classList.toggle('visible',
+    mode === 'draw' || mode === 'erase');
+}
+
+function onThicknessChange() {
+  strokeThickness = parseInt(document.getElementById('tb-thickness').value, 10);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAGE NAVIGATION
+// ═══════════════════════════════════════════════════════════
 async function changePage(delta) {
   if (!pdfDoc) return;
   const next = currentPage + delta;
   if (next < 1 || next > totalPages) return;
   currentPage = next;
-  viewer.scrollTo(0, viewer.scrollHeight); // go to bottom (page anchored there)
+  viewer.scrollTo(0, viewer.scrollHeight);
   updateUI();
   await renderPage();
+  redrawAnnotations();
 }
 
-// ─── Zoom ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// ZOOM
+// ═══════════════════════════════════════════════════════════
 async function changeZoom(delta) {
   if (!pdfDoc) return;
   const nz = zoomLevel + delta;
   if (nz < ZOOM_MIN || nz > ZOOM_MAX) return;
 
-  // Keep the visible center point stable through zoom
   const cx   = viewer.scrollLeft + viewer.clientWidth  / 2;
   const cy   = viewer.scrollTop  + viewer.clientHeight / 2;
-  const oldW = canvas.offsetWidth  || 1;
-  const oldH = canvas.offsetHeight || 1;
+  const oldW = pdfCanvas.offsetWidth  || 1;
+  const oldH = pdfCanvas.offsetHeight || 1;
 
   zoomLevel = nz;
   updateUI();
   await renderPage();
+  redrawAnnotations();
 
-  const newW = canvas.offsetWidth;
-  const newH = canvas.offsetHeight;
+  const newW = pdfCanvas.offsetWidth;
+  const newH = pdfCanvas.offsetHeight;
   viewer.scrollLeft = cx * (newW / oldW) - viewer.clientWidth  / 2;
   viewer.scrollTop  = cy * (newH / oldH) - viewer.clientHeight / 2;
 }
@@ -541,70 +775,64 @@ async function fitToWidth() {
   if (!pdfDoc) return;
   await computeFitScale();
   zoomLevel = 0;
-  // After render, scroll to bottom so page bottom touches toolbar
   await renderPage();
+  redrawAnnotations();
   viewer.scrollTo(0, viewer.scrollHeight);
   updateUI();
 }
 
-// ─── Rotate ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// ROTATE
+// ═══════════════════════════════════════════════════════════
 async function rotatePage() {
   if (!pdfDoc) return;
   rotation = (rotation + 90) % 360;
   await computeFitScale();
   zoomLevel = 0;
   await renderPage();
+  redrawAnnotations();
   viewer.scrollTo(0, viewer.scrollHeight);
   updateUI();
 }
 
-// ─── Pan ──────────────────────────────────────────────────
-function togglePan() {
-  panMode = !panMode;
-  viewer.classList.toggle('pan-mode', panMode);
-  document.getElementById('tb-pan').classList.toggle('active', panMode);
-  toast(panMode ? 'Pan mode on' : 'Pan mode off');
-}
-
+// ═══════════════════════════════════════════════════════════
+// PAN (pointer drag on viewer — only fires when mode=pan)
+// ═══════════════════════════════════════════════════════════
 viewer.addEventListener('pointerdown', e => {
-  if (!panMode || e.button !== 0) return;
+  if (mode !== 'pan' || e.button !== 0) return;
   isPanning  = true;
-  panStartX  = e.clientX;
-  panStartY  = e.clientY;
-  panScrollX = viewer.scrollLeft;
-  panScrollY = viewer.scrollTop;
+  panStartX  = e.clientX; panStartY  = e.clientY;
+  panScrollX = viewer.scrollLeft; panScrollY = viewer.scrollTop;
   viewer.classList.add('is-panning');
   viewer.setPointerCapture(e.pointerId);
   e.preventDefault();
 });
-
 viewer.addEventListener('pointermove', e => {
   if (!isPanning) return;
   viewer.scrollLeft = panScrollX - (e.clientX - panStartX);
   viewer.scrollTop  = panScrollY - (e.clientY - panStartY);
 });
-
 viewer.addEventListener('pointerup',     () => { isPanning = false; viewer.classList.remove('is-panning'); });
 viewer.addEventListener('pointercancel', () => { isPanning = false; viewer.classList.remove('is-panning'); });
 
-// ─── Fullscreen ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// FULLSCREEN
+// ═══════════════════════════════════════════════════════════
 function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen().catch(() => {});
-  }
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  else document.exitFullscreen().catch(() => {});
 }
-
 document.addEventListener('fullscreenchange', () => {
   const isFs = !!document.fullscreenElement;
   document.getElementById('fs-icon-expand').style.display = isFs ? 'none' : '';
   document.getElementById('fs-icon-shrink').style.display = isFs ? ''     : 'none';
-  document.getElementById('tb-fs').dataset.tip = isFs ? 'Exit Fullscreen  (F)' : 'Fullscreen  (F)';
+  document.getElementById('tb-fs').dataset.tip = isFs ? 'Exit Fullscreen (F)' : 'Fullscreen (F)';
   if (pdfDoc) setTimeout(fitToWidth, 100);
 });
 
-// ─── UI ───────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════
 function updateUI() {
   const has = !!pdfDoc;
   const pct = Math.round(Math.pow(ZOOM_STEP, zoomLevel) * 100);
@@ -615,24 +843,29 @@ function updateUI() {
   document.getElementById('tb-next').disabled     = !has || currentPage >= totalPages;
   document.getElementById('tb-zoom-out').disabled  = !has || zoomLevel <= ZOOM_MIN;
   document.getElementById('tb-zoom-in').disabled   = !has || zoomLevel >= ZOOM_MAX;
+  document.getElementById('tb-draw').disabled      = !has;
+  document.getElementById('tb-erase').disabled     = !has;
+  document.getElementById('tb-clear').disabled     = !has;
   document.getElementById('tb-pan').disabled       = !has;
   document.getElementById('tb-rotate').disabled    = !has;
   zoomPill.disabled = !has;
 }
 
-// ─── Toast ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════
 let toastTimer;
 function toast(msg, duration = 2600) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), duration);
 }
-
 function setLoading(show) { loadingEl.classList.toggle('hidden', !show); }
 
-// ─── Drag and drop ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// DRAG AND DROP
+// ═══════════════════════════════════════════════════════════
 let dragCounter = 0;
 document.addEventListener('dragenter', e => { e.preventDefault(); dragCounter++; dragOverlay.classList.add('active'); });
 document.addEventListener('dragleave', () => { if (--dragCounter <= 0) { dragCounter = 0; dragOverlay.classList.remove('active'); } });
@@ -643,34 +876,51 @@ document.addEventListener('drop', async e => {
   if (file) await openFile(file);
 });
 
-// ─── Keyboard ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════════════
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   switch (e.key) {
-    case 'ArrowRight': case 'PageDown': changePage(1);  break;
-    case 'ArrowLeft':  case 'PageUp':   changePage(-1); break;
-    case '+': case '=': changeZoom(1);  break;
-    case '-': case '_': changeZoom(-1); break;
-    case 'w': case 'W': fitToWidth();   break;
-    case 'r': case 'R': rotatePage();   break;
-    case 'f': case 'F': toggleFullscreen(); break;
-    case 'p': case 'P': if (pdfDoc) togglePan(); break;
+    case 'ArrowRight': case 'PageDown': changePage(1);     break;
+    case 'ArrowLeft':  case 'PageUp':   changePage(-1);    break;
+    case '+': case '=':                 changeZoom(1);     break;
+    case '-': case '_':                 changeZoom(-1);    break;
+    case 'w': case 'W':                 fitToWidth();      break;
+    case 'r': case 'R':                 rotatePage();      break;
+    case 'f': case 'F':                 toggleFullscreen(); break;
+    case 'd': case 'D': if (pdfDoc)     setMode('draw');   break;
+    case 'e': case 'E': if (pdfDoc)     setMode('erase');  break;
+    case 'p': case 'P': if (pdfDoc)     setMode('pan');    break;
+    case 'x': case 'X': if (pdfDoc)     clearPage();       break;
     case 'o': case 'O': document.getElementById('file-input').click(); break;
   }
 });
 
-// ─── Resize / orientation ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// RESIZE / ORIENTATION
+// ═══════════════════════════════════════════════════════════
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (pdfDoc) fitToWidth(); }, 150);
+  resizeTimer = setTimeout(async () => {
+    if (!pdfDoc) return;
+    await fitToWidth();
+    redrawAnnotations();
+  }, 150);
 });
 screen.orientation?.addEventListener('change', () => {
-  if (pdfDoc) setTimeout(fitToWidth, 250);
+  if (pdfDoc) setTimeout(async () => { await fitToWidth(); redrawAnnotations(); }, 250);
 });
 
-// ─── Init ─────────────────────────────────────────────────
-updateUI();
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+(async () => {
+  try { db = await openDB(); }
+  catch (e) { console.warn('IndexedDB unavailable, annotations will not persist:', e); }
+  updateUI();
+})();
 </script>
 </body>
 </html>
