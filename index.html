@@ -61,6 +61,11 @@
       min-height: 100%; width: max-content; min-width: 100%;
       padding: 16px 16px 0; position: relative; z-index: 1;
     }
+    /* In half-page mode: center the clip-wrap vertically */
+    #scroll-inner.half-page-centered {
+      justify-content: center;
+      padding: 0 16px;
+    }
     #scroll-spacer { flex: 1; min-height: 0; }
 
     /* ─── Canvas stack ────────────────────────────────────── */
@@ -807,6 +812,8 @@ function applyHalfPageClip() {
   const canvasWrap = document.getElementById('canvas-wrap');
   const splitLine  = document.getElementById('split-line');
   const splitNudge = document.getElementById('split-nudge');
+  const scrollInner = document.getElementById('scroll-inner');
+  const scrollSpacer = document.getElementById('scroll-spacer');
   const canvasW    = pdfCanvas.offsetWidth;
   const canvasH    = pdfCanvas.offsetHeight;
 
@@ -817,8 +824,15 @@ function applyHalfPageClip() {
     canvasWrap.style.top  = '0px';
     splitLine.classList.remove('visible');
     splitNudge.classList.remove('visible');
+    // Restore bottom-anchor layout
+    scrollInner.classList.remove('half-page-centered');
+    scrollSpacer.style.display = '';
     return;
   }
+
+  // Switch to centered layout for half-page mode
+  scrollInner.classList.add('half-page-centered');
+  scrollSpacer.style.display = 'none';
 
   const s       = getPageSplit();
   const topPx    = Math.round(canvasH * s.top);
