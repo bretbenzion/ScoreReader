@@ -600,7 +600,9 @@ let strokeThickness = 3;
 // ── Half-page state ──────────────────────────────────────
 let halfPageMode = false;
 let halfPageSide = 'top'; // 'top' | 'bottom'
-let splitRatio   = 0.5;   // 0–1, fraction of page height where split occurs
+let splitRatios  = {};     // page-keyed: splitRatios[pageNum] = 0–1
+function getSplitRatio() { return splitRatios[String(currentPage)] ?? 0.5; }
+function setSplitRatio(v) { splitRatios[String(currentPage)] = Math.min(0.85, Math.max(0.15, v)); }
 let layerIdCounter  = 1;
 
 // ═══════════════════════════════════════════════════════════
@@ -693,7 +695,7 @@ async function openFile(file) {
     const savedAnn    = await dbGet(STORE_ANN,    pdfHash);
     const savedLayers = await dbGet(STORE_LAYERS, pdfHash);
     const savedSplit  = await dbGet(STORE_SPLIT,  pdfHash);
-    splitRatio = (savedSplit != null) ? savedSplit : 0.5;
+    splitRatios = (savedSplit != null && typeof savedSplit === 'object') ? savedSplit : {};
     annotations = savedAnn    || {};
     if (savedLayers) {
       layers = savedLayers.layers || { pen: [], hl: [] };
@@ -775,7 +777,7 @@ function applyHalfPageClip() {
     return;
   }
 
-  const splitPx = Math.round(canvasH * splitRatio);
+  const splitPx = Math.round(canvasH * getSplitRatio());
 
   if (halfPageSide === 'top') {
     clipWrap.style.height = splitPx + 'px';
@@ -799,12 +801,12 @@ function applyHalfPageClip() {
 // ─── Split ratio persistence ──────────────────────────────
 async function saveSplitRatio() {
   if (!pdfHash) return;
-  try { await dbPut(STORE_SPLIT, pdfHash, splitRatio); } catch(e) {}
+  try { await dbPut(STORE_SPLIT, pdfHash, splitRatios); } catch(e) {}
 }
 
 // Nudge split by N% of page height
 function nudgeSplit(dir) {
-  splitRatio = Math.min(0.85, Math.max(0.15, splitRatio + dir * 0.01));
+  setSplitRatio(getSplitRatio() + dir * 0.01);
   applyHalfPageClip();
   saveSplitRatio();
 }
@@ -818,7 +820,7 @@ function nudgeSplit(dir) {
     if (!halfPageMode) return;
     dragging = true;
     dragStartY     = e.clientY;
-    dragStartRatio = splitRatio;
+    dragStartRatio = getSplitRatio();
     document.getElementById('split-line').setPointerCapture(e.pointerId);
     e.stopPropagation(); e.preventDefault();
   }, { passive: false });
@@ -829,7 +831,7 @@ function nudgeSplit(dir) {
     if (canvasH === 0) return;
     const dy    = e.clientY - dragStartY;
     const delta = dy / canvasH;
-    splitRatio  = Math.min(0.85, Math.max(0.15, dragStartRatio + delta));
+    setSplitRatio(dragStartRatio + delta);
     applyHalfPageClip();
   });
 
@@ -866,12 +868,15 @@ async function halfPageAdvance() {
 
 async function halfPageRetreat() {
   if (halfPageSide === 'bottom') {
+    // bottom → top of same page
     halfPageSide = 'top';
     applyHalfPageClip();
   } else {
-    if (currentPage <= 1) return;
-    halfPageSide = 'bottom';
+    // top of current page → can we go back?
+    if (currentPage <= 1) return; // already at very first half, nothing to do
+    // go to bottom half of previous page
     currentPage--;
+    halfPageSide = 'bottom';
     updateUI();
     await renderPage(); redrawAnnotations(); applyHalfPageClip();
   }
