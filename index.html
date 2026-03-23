@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ScoreReader</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Bodoni+Moda:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -488,15 +488,16 @@
 
       <div class="tb-divider"></div>
 
+      <!-- Undo -->
+      <button class="tb-btn" id="tb-undo" data-tip="Undo (Z)" onclick="undoLast()" disabled>
+        <svg viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>
+      </button>
+
       <!-- Eraser -->
       <button class="tb-btn" id="tb-erase" data-tip="Eraser (E)" onclick="setMode('erase')" disabled>
         <svg viewBox="0 0 24 24"><path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><path d="M6 11l7 7"/></svg>
       </button>
 
-      <!-- Clear page -->
-      <button class="tb-btn" id="tb-clear" data-tip="Clear Page (X)" onclick="clearPage()" disabled>
-        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
-      </button>
 
       <div class="tb-divider"></div>
 
@@ -597,17 +598,17 @@ const HL_ALPHA = 0.35;
 const HL_WIDTH_MULT = 8; // highlighter is 8× the stroke thickness
 
 const PALETTE = [
-  '#1a1a2e','#2c2c2c','#4a4a4a','#ffffff',
-  '#2563eb','#5b8cf7','#06b6d4','#0ea5e9',
-  '#10b981','#22c55e','#84cc16','#eab308',
-  '#f97316','#ef4444','#ec4899','#a855f7'
+  '#000000','#1e1e1e','#6b7280','#ffffff',
+  '#1d4ed8','#6366f1','#0891b2','#0284c7',
+  '#059669','#16a34a','#65a30d','#ca8a04',
+  '#ea580c','#dc2626','#db2777','#9333ea'
 ];
 
 const HL_PALETTE = [
-  '#facc15','#fde68a','#86efac','#6ee7b7',
-  '#7dd3fc','#93c5fd','#f9a8d4','#fca5a5',
-  '#fdba74','#d9f99d','#a5f3fc','#c4b5fd',
-  '#fb923c','#4ade80','#38bdf8','#e879f9'
+  '#fde047','#fbbf24','#86efac','#34d399',
+  '#67e8f9','#60a5fa','#f9a8d4','#fb7185',
+  '#fdba74','#bef264','#a5f3fc','#c084fc',
+  '#f97316','#4ade80','#22d3ee','#e879f9'
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -658,8 +659,11 @@ let currentStroke = null;
 let strokeThickness = 3;
 let activeFingeringChar = '1'; // currently selected fingering digit
 const FINGERING_SIZE = 13; // base px at fit zoom (normalized on save)
-let fingerTouchNorm   = null; // normalized touch point captured on pen-down
-let fingerPrevButtons = 0;    // previous buttons bitmask for barrel edge detection
+let fingerTouchNorm   = null;
+let fingerPrevButtons = 0;
+
+// Undo stack: array of {page, layerId, index} for last annotation per action
+let undoStack = [];
 
 // ── Half-page state ──────────────────────────────────────
 let halfPageMode = false;
@@ -780,6 +784,7 @@ async function openFile(file) {
     const savedLayers = await dbGet(STORE_LAYERS, pdfHash);
     const savedSplit  = await dbGet(STORE_SPLIT,  pdfHash);
     splitRatios = (savedSplit != null && typeof savedSplit === 'object') ? savedSplit : {};
+    undoStack = [];
     annotations = savedAnn    || {};
     if (savedLayers) {
       layers = savedLayers.layers || { pen: [], hl: [] };
@@ -1000,7 +1005,7 @@ function drawFingeringOn(ctx, canvas, ann, colorOverride) {
   const pos  = toPx(ann.x, ann.y, canvas);
   const size = Math.max(6, ann.size * strokeScale());
   ctx.save();
-  ctx.font        = `bold ${size}px "Bodoni Moda", "Bodoni MT", "Didot", "Times New Roman", serif`;
+  ctx.font        = `bold ${size}px "Playfair Display", "Palatino Linotype", "Book Antiqua", Georgia, serif`;
   ctx.fillStyle   = colorOverride || ann.color || '#2563eb';
   ctx.textAlign   = 'center';
   ctx.textBaseline = 'middle';
@@ -1172,6 +1177,8 @@ function setupCanvasPointer(canvas) {
       if (!annotations[pg]) annotations[pg] = {};
       if (!annotations[pg][layer.id]) annotations[pg][layer.id] = [];
       annotations[pg][layer.id].push(ann);
+      undoStack.push({ page: pg, layerId: layer.id });
+      updateUndoBtn();
       fingerTouchNorm = null;
       fingerPrevButtons = 0;
       await saveAnnotations();
@@ -1186,6 +1193,8 @@ function setupCanvasPointer(canvas) {
         const lid = currentStroke.layerId;
         if (!annotations[pg][lid]) annotations[pg][lid] = [];
         annotations[pg][lid].push(currentStroke);
+        undoStack.push({ page: pg, layerId: lid });
+        updateUndoBtn();
         await saveAnnotations();
       }
       currentStroke = null;
@@ -1234,6 +1243,23 @@ function eraseAt(clientX, clientY) {
 }
 
 // ─── Clear page ───────────────────────────────────────────
+function updateUndoBtn() {
+  const btn = document.getElementById('tb-undo');
+  if (btn) btn.disabled = !pdfDoc || undoStack.length === 0;
+}
+
+async function undoLast() {
+  if (!pdfDoc || undoStack.length === 0) return;
+  const { page, layerId } = undoStack.pop();
+  const pg = annotations[page];
+  if (pg && pg[layerId] && pg[layerId].length > 0) {
+    pg[layerId].pop();
+    await saveAnnotations();
+    if (page === currentPage) redrawAnnotations();
+  }
+  updateUndoBtn();
+}
+
 async function clearPage() {
   if (!pdfDoc) return;
   const pg = annotations[currentPage];
@@ -1741,7 +1767,7 @@ function updateUI() {
   document.getElementById('tb-hl').disabled      = !has;
   document.getElementById('tb-layers').disabled  = !has;
   document.getElementById('tb-erase').disabled   = !has;
-  document.getElementById('tb-clear').disabled   = !has;
+  updateUndoBtn();
   document.getElementById('tb-pan').disabled     = !has;
   document.getElementById('tb-rotate').disabled  = !has;
   document.getElementById('tb-half').disabled    = !has;
@@ -1792,7 +1818,7 @@ document.addEventListener('keydown', e => {
     case 'e': case 'E': if (pdfDoc) setMode('erase'); break;
     case 'p': case 'P': if (pdfDoc) setMode('pan');   break;
     case 'l': case 'L': if (pdfDoc) toggleLayersPanel(); break;
-    case 'x': case 'X': if (pdfDoc) clearPage();      break;
+    case 'z': case 'Z': if (pdfDoc) undoLast();       break;
     case 'v': case 'V': if (pdfDoc) toggleHalfPage(); break;
     case 'n': case 'N': if (pdfDoc) setMode('finger'); break;
     case 'o': case 'O': document.getElementById('file-input').click(); break;
