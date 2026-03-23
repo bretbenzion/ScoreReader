@@ -338,7 +338,7 @@
 
     #split-nudge {
       display: none;
-      position: fixed; right: 12px;
+      position: fixed; right: 90px;
       transform: translateY(-50%);
       z-index: 201; gap: 4px; align-items: center;
     }
@@ -351,6 +351,17 @@
       transition: background 0.1s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
     .nudge-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* ─── Edge tap navigation zones ─────────────────────── */
+    .edge-nav {
+      position: fixed; top: 0; bottom: var(--toolbar-h);
+      width: 12.5vw; /* 1/8 of viewport */
+      z-index: 50; cursor: pointer;
+      /* Completely invisible — no background, no border */
+      -webkit-tap-highlight-color: transparent;
+    }
+    #edge-prev { left: 0; }
+    #edge-next { right: 0; }
 
     /* ─── Toast ───────────────────────────────────────────── */
     #toast {
@@ -453,6 +464,9 @@
       <button class="tb-btn" id="tb-half" data-tip="Half Page (V)" onclick="toggleHalfPage()" disabled>
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="3" x2="12" y2="12"/></svg>
       </button>
+      <button class="tb-btn" id="tb-nudge" data-tip="Adjust Split" onclick="toggleNudge()" disabled>
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 10 12 3 19 10"/><polyline points="5 14 12 21 19 14"/></svg>
+      </button>
 
       <!-- Pan -->
       <button class="tb-btn" id="tb-pan" data-tip="Pan (P)" onclick="setMode('pan')" disabled>
@@ -512,6 +526,10 @@
   <div class="spinner"></div>
   <span class="loading-text">Loading Score…</span>
 </div>
+<!-- Edge tap navigation zones -->
+<div id="edge-prev" class="edge-nav" onclick="edgeNav(-1)"></div>
+<div id="edge-next" class="edge-nav" onclick="edgeNav(1)"></div>
+
 <!-- Split line overlay — fixed so it's always visible above the score -->
 <div id="split-line"></div>
 <div id="split-nudge">
@@ -574,6 +592,8 @@ function strokeScale() {
 
 // mode: 'none' | 'draw' | 'hl' | 'erase' | 'pan'
 let mode = 'none';
+let lastDrawMode = 'none'; // restored when pan is toggled off
+let edgeNavEnabled = true;  // toggleable edge tap navigation
 
 // Pan
 let isPanning  = false;
@@ -795,7 +815,8 @@ function applyHalfPageClip() {
   splitLine.style.top  = screenY + 'px';
   splitNudge.style.top = screenY + 'px';
   splitLine.classList.add('visible');
-  splitNudge.classList.add('visible');
+  if (nudgeVisible) splitNudge.classList.add('visible');
+  else splitNudge.classList.remove('visible');
 }
 
 // ─── Split ratio persistence ──────────────────────────────
@@ -842,45 +863,50 @@ function nudgeSplit(dir) {
   });
 })();
 
+let nudgeVisible = false;
+
+function toggleNudge() {
+  if (!halfPageMode) return;
+  nudgeVisible = !nudgeVisible;
+  document.getElementById('tb-nudge').classList.toggle('active', nudgeVisible);
+  applyHalfPageClip(); // re-apply to show/hide nudge
+}
+
 function toggleHalfPage() {
   if (!pdfDoc) return;
   halfPageMode = !halfPageMode;
   halfPageSide = 'top';
+  if (!halfPageMode) { nudgeVisible = false; document.getElementById('tb-nudge').classList.remove('active'); }
   document.getElementById('tb-half').classList.toggle('active', halfPageMode);
   applyHalfPageClip();
   updateUI();
-  if (halfPageMode) toast('Half-page mode on  ·  V to toggle');
+  if (halfPageMode) toast('Half-page on  ·  use split adjuster to reposition');
 }
 
-// Half-page navigation: cycles top→bottom→next page top→...
-async function halfPageAdvance() {
-  if (halfPageSide === 'top') {
-    halfPageSide = 'bottom';
-    applyHalfPageClip();
-  } else {
-    if (currentPage >= totalPages) return;
-    halfPageSide = 'top';
-    currentPage++;
-    updateUI();
-    await renderPage(); redrawAnnotations(); applyHalfPageClip();
-  }
+// Half-page navigation using a virtual index:
+//   virtualIndex = (page - 1) * 2 + (side === 'bottom' ? 1 : 0)
+//   page 1 top = 0, page 1 bottom = 1, page 2 top = 2, page 2 bottom = 3 ...
+// This makes advance/retreat completely unambiguous with no stranded states.
+
+function halfVirtualIndex() {
+  return (currentPage - 1) * 2 + (halfPageSide === 'bottom' ? 1 : 0);
 }
 
-async function halfPageRetreat() {
-  if (halfPageSide === 'bottom') {
-    // bottom → top of same page
-    halfPageSide = 'top';
-    applyHalfPageClip();
-  } else {
-    // top of current page → can we go back?
-    if (currentPage <= 1) return; // already at very first half, nothing to do
-    // go to bottom half of previous page
-    currentPage--;
-    halfPageSide = 'bottom';
-    updateUI();
-    await renderPage(); redrawAnnotations(); applyHalfPageClip();
-  }
+async function gotoHalfIndex(idx) {
+  const maxIdx = totalPages * 2 - 1;
+  if (idx < 0 || idx > maxIdx) return;
+  const newPage = Math.floor(idx / 2) + 1;
+  const newSide = idx % 2 === 0 ? 'top' : 'bottom';
+  const pageChanged = newPage !== currentPage;
+  currentPage  = newPage;
+  halfPageSide = newSide;
+  updateUI();
+  if (pageChanged) { await renderPage(); redrawAnnotations(); }
+  applyHalfPageClip();
 }
+
+async function halfPageAdvance() { await gotoHalfIndex(halfVirtualIndex() + 1); }
+async function halfPageRetreat() { await gotoHalfIndex(halfVirtualIndex() - 1); }
 
 // ═══════════════════════════════════════════════════════════
 // ANNOTATION DRAWING
@@ -1281,7 +1307,16 @@ function switchTab(type) {
 // ═══════════════════════════════════════════════════════════
 function setMode(newMode) {
   if (!pdfDoc) return;
-  if (mode === newMode) newMode = 'none';
+
+  // Pan toggle: if already in pan, restore last draw mode
+  if (newMode === 'pan' && mode === 'pan') {
+    newMode = (['draw','hl'].includes(lastDrawMode)) ? lastDrawMode : 'none';
+  } else if (newMode === mode) {
+    newMode = 'none';
+  }
+
+  // Remember last drawing mode so pan can restore it
+  if (['draw','hl'].includes(newMode)) lastDrawMode = newMode;
 
   const entering = ['draw','hl','erase'].includes(newMode);
   if (entering) {
@@ -1309,6 +1344,19 @@ function setMode(newMode) {
 // ═══════════════════════════════════════════════════════════
 // THICKNESS
 // ═══════════════════════════════════════════════════════════
+function edgeNav(delta) {
+  // Don't fire during drawing modes — pen input might graze the edge
+  if (['draw','hl','erase'].includes(mode)) return;
+  changePage(delta);
+}
+
+function toggleEdgeNav() {
+  edgeNavEnabled = !edgeNavEnabled;
+  document.getElementById('edge-prev').style.display = edgeNavEnabled ? '' : 'none';
+  document.getElementById('edge-next').style.display = edgeNavEnabled ? '' : 'none';
+  toast('Edge navigation ' + (edgeNavEnabled ? 'on' : 'off'));
+}
+
 function changeThickness(delta) {
   strokeThickness = Math.max(0.5, Math.min(20, Math.round((strokeThickness + delta) * 2) / 2));
   document.getElementById('thickness-val').textContent = strokeThickness;
@@ -1433,6 +1481,7 @@ function updateUI() {
   document.getElementById('tb-pan').disabled     = !has;
   document.getElementById('tb-rotate').disabled  = !has;
   document.getElementById('tb-half').disabled    = !has;
+  document.getElementById('tb-nudge').disabled   = !has;
   zoomPill.disabled = !has;
 }
 
