@@ -1524,46 +1524,62 @@ function detectBarrelButtons() {
 
 // Listen on every pointer event type to catch barrel buttons
 // Some drivers fire pointerdown, others fire as buttons on pointermove
-for (const evtName of ['pointerdown', 'pointermove', 'pointerup']) {
-  document.addEventListener(evtName, e => {
-    if (e.pointerType !== 'pen') return;
+// Track previous buttons bitmask to detect leading edge of bottom barrel
+let _prevPenButtons = 0;
 
-    // Detection mode — log any non-zero button value
-    if (barrelDetectMode && e.buttons > 0) {
-      // e.buttons is a bitmask; e.button is the specific button for this event
-      const info = `type:${evtName} button:${e.button} buttons:${e.buttons}`;
-      if (!barrelLog.has(info)) {
-        barrelLog.add(info);
-        toast(info, 4000);
-        console.log('[Barrel detect]', info);
-      }
+document.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'pen') return;
+
+  // Detection mode
+  if (barrelDetectMode) {
+    const info = `pointermove button:${e.button} buttons:${e.buttons}`;
+    if (e.buttons > 0 && !barrelLog.has(info)) {
+      barrelLog.add(info);
+      toast(info, 4000);
+      console.log('[Barrel detect]', info);
     }
+    _prevPenButtons = e.buttons;
+    return;
+  }
 
-    if (barrelDetectMode) return;
+  // Bottom barrel: fire once on leading edge (buttons goes from !32 to 32)
+  const bottomDown = (e.buttons & 32) && !(_prevPenButtons & 32);
+  if (bottomDown) {
+    if (mode === 'finger') cycleFingeringChar(1);
+    else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(1);
+  }
+  _prevPenButtons = e.buttons;
+}, true);
 
-    // Bottom barrel button: reports as e.buttons === 32 on pointermove
-    // (no pointerdown fires for it — treat first appearance as a press)
-    // Top barrel button: reports as e.button === 2 on pointerdown
-    if (evtName === 'pointermove' && e.buttons === 32) {
-      const now = Date.now();
-      if (!window._lastBarrelTime || now - window._lastBarrelTime > 400) {
-        window._lastBarrelTime = now;
-        if (mode === 'finger') cycleFingeringChar(1);
-        else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(1);
-      }
-      e.preventDefault();
-      return;
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'pen') return;
+
+  // Detection mode
+  if (barrelDetectMode) {
+    const info = `pointerdown button:${e.button} buttons:${e.buttons}`;
+    if (!barrelLog.has(info)) {
+      barrelLog.add(info);
+      toast(info, 4000);
+      console.log('[Barrel detect]', info);
     }
+    return;
+  }
 
-    if (evtName === 'pointerdown' && e.button === 2) {
-      if (mode === 'finger') cycleFingeringChar(-1);
-      else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(-1);
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-  }, true); // capture phase
-}
+  // Top barrel fires as button===2 on pointerdown
+  if (e.button === 2) {
+    if (mode === 'finger') cycleFingeringChar(-1);
+    else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(-1);
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+// Suppress context menu triggered by top barrel button
+document.addEventListener('contextmenu', e => {
+  if (e.pointerType === 'pen' || e instanceof PointerEvent) {
+    e.preventDefault();
+  }
+}, true);
 
 function changeThickness(delta) {
   strokeThickness = Math.max(0.5, Math.min(20, Math.round((strokeThickness + delta) * 2) / 2));
