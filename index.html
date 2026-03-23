@@ -1088,7 +1088,12 @@ function setupCanvasPointer(canvas) {
 
     // Fingering: capture touch point on pen-down, place on pen-up
     if (mode === 'finger') {
-      if (e.button !== 0) return; // ignore barrel-only events
+      if (e.button === 2 && fingerTouchNorm) {
+        // Top barrel pressed while already touching — cycle forward
+        cycleFingeringChar(1);
+        e.preventDefault(); return;
+      }
+      if (e.button !== 0) return; // ignore other barrel-only events
       canvas.setPointerCapture(e.pointerId);
       fingerTouchNorm = toNorm(e.clientX, e.clientY, canvas);
       fingerPrevButtons = e.buttons;
