@@ -91,7 +91,8 @@
     #viewer.draw-mode  #hl-canvas  { pointer-events: none; }
     #viewer.hl-mode    #hl-canvas  { pointer-events: auto; cursor: crosshair; }
     #viewer.hl-mode    #ann-canvas { pointer-events: none; }
-    #viewer.erase-mode #ann-canvas { pointer-events: auto; cursor: cell; }
+    #viewer.erase-mode  #ann-canvas { pointer-events: auto; cursor: cell; }
+    #viewer.finger-mode #ann-canvas { pointer-events: auto; cursor: crosshair; }
     #viewer.pan-mode   { cursor: grab; }
     #viewer.pan-mode.is-panning { cursor: grabbing; }
 
@@ -185,6 +186,23 @@
       width: 6px; height: 6px; border-radius: 50%;
       border: 1px solid rgba(0,0,0,0.4);
     }
+
+    /* ─── Fingering palette (inline toolbar) ─────────────── */
+    #fingering-palette {
+      display: none; align-items: center; gap: 2px; flex-shrink: 0;
+    }
+    #fingering-palette.visible { display: flex; }
+    .fng-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text);
+      width: 28px; height: 32px; cursor: pointer;
+      font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      flex-shrink: 0;
+    }
+    .fng-btn:hover  { background: rgba(255,255,255,0.08); }
+    .fng-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* Thickness +/- controls — always visible */
     #thickness-ctrl {
@@ -443,6 +461,20 @@
         <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
       </button>
 
+      <!-- Fingering mode -->
+      <button class="tb-btn" id="tb-finger" data-tip="Fingering (N)" onclick="setMode('finger')" disabled>
+        <svg viewBox="0 0 24 24" style="font-size:0" fill="none"><text x="4" y="17" font-family="monospace" font-size="13" fill="currentColor">12</text></svg>
+      </button>
+
+      <!-- Fingering palette (shown when finger mode active) -->
+      <div id="fingering-palette">
+        <button class="fng-btn active" id="fng-1" onclick="selectFingering('1')">1</button>
+        <button class="fng-btn" id="fng-2" onclick="selectFingering('2')">2</button>
+        <button class="fng-btn" id="fng-3" onclick="selectFingering('3')">3</button>
+        <button class="fng-btn" id="fng-4" onclick="selectFingering('4')">4</button>
+        <button class="fng-btn" id="fng-5" onclick="selectFingering('5')">5</button>
+      </div>
+
       <!-- Thickness +/- -->
       <div id="thickness-ctrl">
         <button class="tb-btn" data-tip="Thinner" onclick="changeThickness(-0.5)" style="width:24px;">
@@ -624,6 +656,8 @@ let layerPanelTab  = 'pen'; // 'pen' | 'hl'
 let annotations   = {};
 let currentStroke = null;
 let strokeThickness = 3;
+let activeFingeringChar = '1'; // currently selected fingering digit
+const FINGERING_SIZE = 13; // base px at fit zoom (normalized on save)
 
 // ── Half-page state ──────────────────────────────────────
 let halfPageMode = false;
@@ -959,8 +993,22 @@ function toPx(nx, ny, canvas) {
   return { x: nx * canvas.offsetWidth, y: ny * canvas.offsetHeight };
 }
 
+// Draw a fingering text annotation
+function drawFingeringOn(ctx, canvas, ann, colorOverride) {
+  const pos  = toPx(ann.x, ann.y, canvas);
+  const size = Math.max(6, ann.size * strokeScale());
+  ctx.save();
+  ctx.font        = `bold ${size}px "IBM Plex Mono", monospace`;
+  ctx.fillStyle   = colorOverride || ann.color || '#2563eb';
+  ctx.textAlign   = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ann.char, pos.x, pos.y);
+  ctx.restore();
+}
+
 // Draw stroke onto a given ctx/canvas
 function drawStrokeOn(ctx, canvas, stroke, colorOverride) {
+  if (stroke.type === 'text') { drawFingeringOn(ctx, canvas, stroke, colorOverride); return; }
   if (!stroke.points || stroke.points.length < 2) return;
   ctx.save();
   if (stroke.isHl) {
@@ -1023,7 +1071,7 @@ function activeCanvas() {
 function setupCanvasPointer(canvas) {
   canvas.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch') return;
-    if (mode !== 'draw' && mode !== 'hl' && mode !== 'erase') return;
+    if (mode !== 'draw' && mode !== 'hl' && mode !== 'erase' && mode !== 'finger') return;
 
     // Check active layer exists
     if (mode === 'draw' && activePenLayer < 0) {
@@ -1031,6 +1079,29 @@ function setupCanvasPointer(canvas) {
     }
     if (mode === 'hl' && activeHlLayer < 0) {
       toast('Add a highlight layer first.'); return;
+    }
+    if (mode === 'finger' && activePenLayer < 0) {
+      toast('Add a pen layer first.'); return;
+    }
+
+    // Fingering placement — place on tap, no drag needed
+    if (mode === 'finger') {
+      const norm  = toNorm(e.clientX, e.clientY, canvas);
+      const layer = layers.pen[activePenLayer];
+      const ann   = {
+        type: 'text', char: activeFingeringChar,
+        x: norm.x, y: norm.y,
+        size: FINGERING_SIZE / currentScale(), // normalized
+        color: layer.color, layerId: layer.id
+      };
+      const pg = currentPage;
+      if (!annotations[pg]) annotations[pg] = {};
+      if (!annotations[pg][layer.id]) annotations[pg][layer.id] = [];
+      annotations[pg][layer.id].push(ann);
+      saveAnnotations();
+      redrawAnnotations();
+      e.preventDefault();
+      return;
     }
 
     canvas.setPointerCapture(e.pointerId);
@@ -1119,12 +1190,16 @@ function eraseAt(clientX, clientY) {
   for (const layer of targetLayers) {
     if (!pg[layer.id]) continue;
     const before = pg[layer.id].length;
-    pg[layer.id] = pg[layer.id].filter(stroke =>
-      !stroke.points.some(pt => {
+    pg[layer.id] = pg[layer.id].filter(ann => {
+      if (ann.type === 'text') {
+        const dx = ann.x - pos.x, dy = ann.y - pos.y;
+        return Math.sqrt(dx*dx + dy*dy) >= ERASE_RADIUS_NORM;
+      }
+      return !ann.points.some(pt => {
         const dx = pt.x - pos.x, dy = pt.y - pos.y;
         return Math.sqrt(dx*dx + dy*dy) < ERASE_RADIUS_NORM;
-      })
-    );
+      });
+    });
     if (pg[layer.id].length !== before) changed = true;
   }
   if (changed) { redrawAnnotations(); saveAnnotations(); }
@@ -1358,17 +1433,18 @@ function setMode(newMode) {
   // Remember last drawing mode so pan can restore it
   if (['draw','hl'].includes(newMode)) lastDrawMode = newMode;
 
-  const entering = ['draw','hl','erase'].includes(newMode);
+  const entering = ['draw','hl','erase','finger'].includes(newMode);
   if (entering) {
     viewer._frozenScrollLeft = viewer.scrollLeft;
     viewer._frozenScrollTop  = viewer.scrollTop;
   }
 
   mode = newMode;
-  viewer.classList.toggle('draw-mode',  mode === 'draw');
-  viewer.classList.toggle('hl-mode',    mode === 'hl');
-  viewer.classList.toggle('erase-mode', mode === 'erase');
-  viewer.classList.toggle('pan-mode',   mode === 'pan');
+  viewer.classList.toggle('draw-mode',   mode === 'draw');
+  viewer.classList.toggle('hl-mode',     mode === 'hl');
+  viewer.classList.toggle('erase-mode',  mode === 'erase');
+  viewer.classList.toggle('finger-mode', mode === 'finger');
+  viewer.classList.toggle('pan-mode',    mode === 'pan');
 
   if (entering) {
     viewer.scrollLeft = viewer._frozenScrollLeft;
@@ -1379,6 +1455,8 @@ function setMode(newMode) {
   document.getElementById('tb-hl').classList.toggle('active',          mode === 'hl');
   document.getElementById('tb-erase').classList.toggle('active-danger', mode === 'erase');
   document.getElementById('tb-pan').classList.toggle('active',          mode === 'pan');
+  document.getElementById('tb-finger').classList.toggle('active',       mode === 'finger');
+  document.getElementById('fingering-palette').classList.toggle('visible', mode === 'finger');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1395,6 +1473,13 @@ function toggleEdgeNav() {
   document.getElementById('edge-prev').style.display = edgeNavEnabled ? '' : 'none';
   document.getElementById('edge-next').style.display = edgeNavEnabled ? '' : 'none';
   toast('Edge navigation ' + (edgeNavEnabled ? 'on' : 'off'));
+}
+
+function selectFingering(char) {
+  activeFingeringChar = char;
+  ['1','2','3','4','5'].forEach(n => {
+    document.getElementById('fng-' + n).classList.toggle('active', n === char);
+  });
 }
 
 function changeThickness(delta) {
@@ -1535,6 +1620,7 @@ function updateUI() {
   document.getElementById('tb-rotate').disabled  = !has;
   document.getElementById('tb-half').disabled    = !has;
   document.getElementById('tb-nudge').disabled   = !has;
+  document.getElementById('tb-finger').disabled  = !has;
   zoomPill.disabled = !has;
 }
 
@@ -1582,6 +1668,7 @@ document.addEventListener('keydown', e => {
     case 'l': case 'L': if (pdfDoc) toggleLayersPanel(); break;
     case 'x': case 'X': if (pdfDoc) clearPage();      break;
     case 'v': case 'V': if (pdfDoc) toggleHalfPage(); break;
+    case 'n': case 'N': if (pdfDoc) setMode('finger'); break;
     case 'o': case 'O': document.getElementById('file-input').click(); break;
   }
 });
