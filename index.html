@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ScoreReader</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Merriweather:wght@900&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -619,6 +619,58 @@ let currentPage = 1;
 let totalPages  = 0;
 let rotation    = 0;
 let renderTask  = null;
+
+// ── Page render cache ─────────────────────────────────────
+// Caches rendered pages as ImageBitmap keyed by "page:scale:rotation"
+// Holds prev, current, next. Invalidated on zoom/rotate.
+const pageCache = new Map();
+const CACHE_MAX = 3;
+let   cacheKey  = '';   // current zoom+rotation key prefix
+
+function getCacheKey(pageNum) {
+  return `${pageNum}:${currentScale().toFixed(4)}:${rotation}`;
+}
+
+function invalidateCache() {
+  pageCache.clear();
+}
+
+async function renderPageToCache(pageNum) {
+  const key = getCacheKey(pageNum);
+  if (pageCache.has(key)) return; // already cached
+  try {
+    const page     = await pdfDoc.getPage(pageNum);
+    const scale    = currentScale();
+    const dpr      = window.devicePixelRatio || 1;
+    const viewport = page.getViewport({ scale, rotation });
+    const cssW     = Math.floor(viewport.width);
+    const cssH     = Math.floor(viewport.height);
+    const offscreen = new OffscreenCanvas(cssW * dpr, cssH * dpr);
+    const ctx       = offscreen.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const task = page.render({ canvasContext: ctx, viewport });
+    await task.promise;
+    const bitmap = await createImageBitmap(offscreen);
+    // Evict oldest if over limit
+    if (pageCache.size >= CACHE_MAX) {
+      const firstKey = pageCache.keys().next().value;
+      pageCache.get(firstKey)?.close?.();
+      pageCache.delete(firstKey);
+    }
+    pageCache.set(key, { bitmap, cssW, cssH });
+  } catch(e) {
+    if (e?.name !== 'RenderingCancelledException') console.error('Cache render error:', e);
+  }
+}
+
+// Pre-render adjacent pages in the background (non-blocking)
+function prefetchAdjacentPages() {
+  if (!pdfDoc) return;
+  setTimeout(async () => {
+    if (currentPage > 1)           await renderPageToCache(currentPage - 1);
+    if (currentPage < totalPages)  await renderPageToCache(currentPage + 1);
+  }, 200); // small delay so current page paint completes first
+}
 let pdfHash     = null;
 
 let fitScale  = 1;
@@ -785,6 +837,7 @@ async function openFile(file) {
     const savedSplit  = await dbGet(STORE_SPLIT,  pdfHash);
     splitRatios = (savedSplit != null && typeof savedSplit === 'object') ? savedSplit : {};
     undoStack = [];
+    invalidateCache();
     annotations = savedAnn    || {};
     if (savedLayers) {
       layers = savedLayers.layers || { pen: [], hl: [] };
@@ -816,6 +869,7 @@ async function computeFitScale() {
   const page = await pdfDoc.getPage(currentPage);
   const vp   = page.getViewport({ scale: 1, rotation });
   fitScale   = (viewer.clientWidth - 32) / vp.width;
+  invalidateCache(); // zoom/rotation changed, cached bitmaps are stale
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -825,12 +879,28 @@ async function renderPage() {
   if (!pdfDoc) return;
   if (renderTask) { try { renderTask.cancel(); } catch {} renderTask = null; }
 
+  const dpr = window.devicePixelRatio || 1;
+  const key = getCacheKey(currentPage);
+
+  if (pageCache.has(key)) {
+    // Cache hit — blit instantly
+    const { bitmap, cssW, cssH } = pageCache.get(key);
+    for (const cv of [pdfCanvas, hlCanvas, annCanvas]) {
+      cv.width = cssW * dpr; cv.height = cssH * dpr;
+      cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+    }
+    pdfCtx.setTransform(1, 0, 0, 1, 0, 0);
+    pdfCtx.drawImage(bitmap, 0, 0);
+    prefetchAdjacentPages();
+    return;
+  }
+
+  // Cache miss — render normally then cache result
   const page     = await pdfDoc.getPage(currentPage);
   const scale    = currentScale();
-  const dpr      = window.devicePixelRatio || 1;
   const viewport = page.getViewport({ scale, rotation });
-  const cssW = Math.floor(viewport.width);
-  const cssH = Math.floor(viewport.height);
+  const cssW     = Math.floor(viewport.width);
+  const cssH     = Math.floor(viewport.height);
 
   for (const cv of [pdfCanvas, hlCanvas, annCanvas]) {
     cv.width = cssW * dpr; cv.height = cssH * dpr;
@@ -840,8 +910,21 @@ async function renderPage() {
 
   renderTask = page.render({ canvasContext: pdfCtx, viewport });
   try { await renderTask.promise; }
-  catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); }
+  catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); return; }
   renderTask = null;
+
+  // Cache the result as an ImageBitmap for instant future use
+  try {
+    const bitmap = await createImageBitmap(pdfCanvas);
+    if (pageCache.size >= CACHE_MAX) {
+      const firstKey = pageCache.keys().next().value;
+      pageCache.get(firstKey)?.close?.();
+      pageCache.delete(firstKey);
+    }
+    pageCache.set(key, { bitmap, cssW, cssH });
+  } catch(e) { /* ImageBitmap not critical */ }
+
+  prefetchAdjacentPages();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1005,7 +1088,7 @@ function drawFingeringOn(ctx, canvas, ann, colorOverride) {
   const pos  = toPx(ann.x, ann.y, canvas);
   const size = Math.max(6, ann.size * strokeScale());
   ctx.save();
-  ctx.font        = `bold ${size}px "Playfair Display", "Palatino Linotype", "Book Antiqua", Georgia, serif`;
+  ctx.font        = `900 ${size}px "Merriweather", "Georgia", serif`;
   ctx.fillStyle   = colorOverride || ann.color || '#2563eb';
   ctx.textAlign   = 'center';
   ctx.textBaseline = 'middle';
@@ -1669,7 +1752,7 @@ async function changeZoom(delta) {
   const cy = viewer.scrollTop  + viewer.clientHeight/2;
   const oldW = pdfCanvas.offsetWidth || 1;
   const oldH = pdfCanvas.offsetHeight || 1;
-  zoomLevel = nz; updateUI();
+  zoomLevel = nz; invalidateCache(); updateUI();
   await renderPage(); redrawAnnotations();
   applyHalfPageClip();
   viewer.scrollLeft = cx * (pdfCanvas.offsetWidth/oldW)  - viewer.clientWidth/2;
