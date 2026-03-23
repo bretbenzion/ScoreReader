@@ -998,7 +998,7 @@ function drawFingeringOn(ctx, canvas, ann, colorOverride) {
   const pos  = toPx(ann.x, ann.y, canvas);
   const size = Math.max(6, ann.size * strokeScale());
   ctx.save();
-  ctx.font        = `bold ${size}px "IBM Plex Mono", monospace`;
+  ctx.font        = `bold italic ${size}px "Georgia", "Times New Roman", serif`;
   ctx.fillStyle   = colorOverride || ann.color || '#2563eb';
   ctx.textAlign   = 'center';
   ctx.textBaseline = 'middle';
@@ -1481,6 +1481,47 @@ function selectFingering(char) {
     document.getElementById('fng-' + n).classList.toggle('active', n === char);
   });
 }
+
+// ─── Pen barrel button handling ──────────────────────────
+// Barrel button 1 (lower) = e.button 1 on most Windows Ink pens
+// Barrel button 2 (upper) = e.button 2
+// We intercept these on pointerdown BEFORE the main handler to
+// cycle fingering number or pen layer, consuming the event.
+
+const FINGERING_CHARS = ['1','2','3','4','5'];
+
+function cycleFingeringChar(dir) {
+  const idx = FINGERING_CHARS.indexOf(activeFingeringChar);
+  const next = (idx + dir + FINGERING_CHARS.length) % FINGERING_CHARS.length;
+  selectFingering(FINGERING_CHARS[next]);
+  toast('Fingering: ' + FINGERING_CHARS[next], 900);
+}
+
+function cyclePenLayer(dir) {
+  if (layers.pen.length === 0) { toast('No pen layers.', 900); return; }
+  const next = (activePenLayer + dir + layers.pen.length) % layers.pen.length;
+  activePenLayer = next;
+  updateLayerDots();
+  renderLayerList();
+  toast('Layer: ' + layers.pen[next].name, 900);
+}
+
+// Global pointerdown listener for barrel buttons — fires on pen input only
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'pen') return;
+  if (e.button !== 1 && e.button !== 2) return;
+
+  // button 1 = cycle down, button 2 = cycle up
+  const dir = e.button === 1 ? 1 : -1;
+
+  if (mode === 'finger') {
+    cycleFingeringChar(dir);
+  } else if (mode === 'draw' || mode === 'hl' || mode === 'erase') {
+    cyclePenLayer(dir);
+  }
+  e.preventDefault();
+  e.stopPropagation();
+}, true); // capture phase so it fires before canvas handlers
 
 function changeThickness(delta) {
   strokeThickness = Math.max(0.5, Math.min(20, Math.round((strokeThickness + delta) * 2) / 2));
