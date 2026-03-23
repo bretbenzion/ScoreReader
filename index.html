@@ -1539,29 +1539,29 @@ for (const evtName of ['pointerdown', 'pointermove', 'pointerup']) {
       }
     }
 
-    // Normal barrel operation — only on pointerdown, non-primary buttons
-    if (evtName !== 'pointerdown') return;
-    if (e.button === 0) return; // primary = normal pen tip, ignore
+    if (barrelDetectMode) return;
 
-    if (barrelDetectMode) return; // in detect mode, don't act
-
-    // Determine direction from which barrel button
-    // Default mapping covers most HP/Wacom/Surface pens:
-    // button 1 = lower barrel, button 2 = upper barrel
-    // Update barrelBtn1/barrelBtn2 after running detection if needed
-    const b1 = barrelBtn1 ?? 1;
-    const b2 = barrelBtn2 ?? 2;
-    if (e.button !== b1 && e.button !== b2) return;
-
-    const dir = e.button === b1 ? 1 : -1;
-
-    if (mode === 'finger') {
-      cycleFingeringChar(dir);
-    } else if (['draw','hl','erase'].includes(mode)) {
-      cyclePenLayer(dir);
+    // Bottom barrel button: reports as e.buttons === 32 on pointermove
+    // (no pointerdown fires for it — treat first appearance as a press)
+    // Top barrel button: reports as e.button === 2 on pointerdown
+    if (evtName === 'pointermove' && e.buttons === 32) {
+      const now = Date.now();
+      if (!window._lastBarrelTime || now - window._lastBarrelTime > 400) {
+        window._lastBarrelTime = now;
+        if (mode === 'finger') cycleFingeringChar(1);
+        else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(1);
+      }
+      e.preventDefault();
+      return;
     }
-    e.preventDefault();
-    e.stopPropagation();
+
+    if (evtName === 'pointerdown' && e.button === 2) {
+      if (mode === 'finger') cycleFingeringChar(-1);
+      else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(-1);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
   }, true); // capture phase
 }
 
