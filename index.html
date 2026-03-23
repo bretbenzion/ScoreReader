@@ -321,33 +321,34 @@
     .color-swatch.selected { border-color: #fff; }
 
     /* ─── Half-page split UI ─────────────────────────────── */
+    /* Split line — fixed overlay, always above the score and toolbar */
     #split-line {
       display: none;
-      position: absolute; left: 0; right: 0;
+      position: fixed; left: 0; right: 0;
       height: 3px; background: var(--accent);
-      cursor: ns-resize; z-index: 10;
-      box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+      cursor: ns-resize; z-index: 200;
+      box-shadow: 0 1px 6px rgba(91,140,247,0.6);
+      pointer-events: auto;
     }
     #split-line::before {
-      /* invisible drag handle — wider than the visible line */
       content: ''; position: absolute;
-      left: 0; right: 0; top: -10px; bottom: -10px;
+      left: 0; right: 0; top: -12px; bottom: -12px;
     }
     #split-line.visible { display: block; }
 
-    /* Nudge buttons that float over the split line */
     #split-nudge {
-      display: none; position: absolute; right: 8px;
+      display: none;
+      position: fixed; right: 12px;
       transform: translateY(-50%);
-      z-index: 11; gap: 4px; align-items: center;
+      z-index: 201; gap: 4px; align-items: center;
     }
     #split-nudge.visible { display: flex; }
     .nudge-btn {
       background: var(--surface); border: 1px solid var(--border);
-      color: var(--text); border-radius: 5px; width: 28px; height: 24px;
-      font-size: 0.85rem; cursor: pointer; display: flex;
+      color: var(--text); border-radius: 5px; width: 30px; height: 26px;
+      font-size: 0.9rem; cursor: pointer; display: flex;
       align-items: center; justify-content: center;
-      transition: background 0.1s;
+      transition: background 0.1s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
     .nudge-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
@@ -372,12 +373,6 @@
     <div id="scroll-inner">
       <div id="scroll-spacer"></div>
       <div id="clip-wrap">
-        <!-- Draggable split line (visible in half-page mode) -->
-        <div id="split-line"></div>
-        <div id="split-nudge">
-          <button class="nudge-btn" onclick="nudgeSplit(-1)" title="Move up">↑</button>
-          <button class="nudge-btn" onclick="nudgeSplit(1)" title="Move down">↓</button>
-        </div>
         <div id="canvas-wrap">
           <canvas id="pdf-canvas"></canvas>
           <canvas id="hl-canvas"></canvas>
@@ -517,6 +512,13 @@
   <div class="spinner"></div>
   <span class="loading-text">Loading Score…</span>
 </div>
+<!-- Split line overlay — fixed so it's always visible above the score -->
+<div id="split-line"></div>
+<div id="split-nudge">
+  <button class="nudge-btn" onclick="nudgeSplit(-1)" title="Move split up">↑</button>
+  <button class="nudge-btn" onclick="nudgeSplit(1)" title="Move split down">↓</button>
+</div>
+
 <input type="file" id="file-input" accept=".pdf,application/pdf" style="display:none" onchange="handleFileInput(event)">
 <div id="toast"></div>
 
@@ -783,15 +785,14 @@ function applyHalfPageClip() {
     canvasWrap.style.top  = '-' + splitPx + 'px';
   }
 
-  // Position split line at the boundary (relative to clip-wrap)
-  splitLine.style.top = (halfPageSide === 'top'
-    ? (splitPx - 1) + 'px'          // bottom edge of top half
-    : (canvasH - splitPx - 1) + 'px' // visible bottom of bottom half... actually always show at bottom of visible area
-  );
-  // Simpler: always show at bottom of current clip
-  splitLine.style.top = (clipWrap.offsetHeight - 2) + 'px';
+  // Get the screen Y of the clip boundary using getBoundingClientRect.
+  // This works correctly even when the canvas is scrolled or zoomed.
+  const clipRect   = clipWrap.getBoundingClientRect();
+  const screenY    = clipRect.bottom; // bottom edge of visible clip = the split boundary
+
+  splitLine.style.top  = screenY + 'px';
+  splitNudge.style.top = screenY + 'px';
   splitLine.classList.add('visible');
-  splitNudge.style.top = splitLine.style.top;
   splitNudge.classList.add('visible');
 }
 
