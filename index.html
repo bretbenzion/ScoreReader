@@ -998,7 +998,7 @@ function drawFingeringOn(ctx, canvas, ann, colorOverride) {
   const pos  = toPx(ann.x, ann.y, canvas);
   const size = Math.max(6, ann.size * strokeScale());
   ctx.save();
-  ctx.font        = `bold italic ${size}px "Georgia", "Times New Roman", serif`;
+  ctx.font        = `bold ${size}px "Times New Roman", serif`;
   ctx.fillStyle   = colorOverride || ann.color || '#2563eb';
   ctx.textAlign   = 'center';
   ctx.textBaseline = 'middle';
@@ -1506,22 +1506,64 @@ function cyclePenLayer(dir) {
   toast('Layer: ' + layers.pen[next].name, 900);
 }
 
-// Global pointerdown listener for barrel buttons — fires on pen input only
-document.addEventListener('pointerdown', e => {
-  if (e.pointerType !== 'pen') return;
-  if (e.button !== 1 && e.button !== 2) return;
+// ─── Barrel button detection & handling ──────────────────
+// Different pens/drivers report different e.button values.
+// Run detectBarrelButtons() from console or tap the detect button
+// to discover what your pen sends, then set them below.
 
-  // button 1 = cycle down, button 2 = cycle up
-  const dir = e.button === 1 ? 1 : -1;
+let barrelBtn1 = null; // lower barrel button value (null = not yet detected)
+let barrelBtn2 = null; // upper barrel button value
+let barrelDetectMode = false;
+const barrelLog = new Set();
 
-  if (mode === 'finger') {
-    cycleFingeringChar(dir);
-  } else if (mode === 'draw' || mode === 'hl' || mode === 'erase') {
-    cyclePenLayer(dir);
-  }
-  e.preventDefault();
-  e.stopPropagation();
-}, true); // capture phase so it fires before canvas handlers
+function detectBarrelButtons() {
+  barrelDetectMode = true;
+  barrelLog.clear();
+  toast('Press each barrel button on the score — watching for values…', 5000);
+}
+
+// Listen on every pointer event type to catch barrel buttons
+// Some drivers fire pointerdown, others fire as buttons on pointermove
+for (const evtName of ['pointerdown', 'pointermove', 'pointerup']) {
+  document.addEventListener(evtName, e => {
+    if (e.pointerType !== 'pen') return;
+
+    // Detection mode — log any non-zero button value
+    if (barrelDetectMode && e.buttons > 0) {
+      // e.buttons is a bitmask; e.button is the specific button for this event
+      const info = `type:${evtName} button:${e.button} buttons:${e.buttons}`;
+      if (!barrelLog.has(info)) {
+        barrelLog.add(info);
+        toast(info, 4000);
+        console.log('[Barrel detect]', info);
+      }
+    }
+
+    // Normal barrel operation — only on pointerdown, non-primary buttons
+    if (evtName !== 'pointerdown') return;
+    if (e.button === 0) return; // primary = normal pen tip, ignore
+
+    if (barrelDetectMode) return; // in detect mode, don't act
+
+    // Determine direction from which barrel button
+    // Default mapping covers most HP/Wacom/Surface pens:
+    // button 1 = lower barrel, button 2 = upper barrel
+    // Update barrelBtn1/barrelBtn2 after running detection if needed
+    const b1 = barrelBtn1 ?? 1;
+    const b2 = barrelBtn2 ?? 2;
+    if (e.button !== b1 && e.button !== b2) return;
+
+    const dir = e.button === b1 ? 1 : -1;
+
+    if (mode === 'finger') {
+      cycleFingeringChar(dir);
+    } else if (['draw','hl','erase'].includes(mode)) {
+      cyclePenLayer(dir);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  }, true); // capture phase
+}
 
 function changeThickness(delta) {
   strokeThickness = Math.max(0.5, Math.min(20, Math.round((strokeThickness + delta) * 2) / 2));
