@@ -658,6 +658,8 @@ let currentStroke = null;
 let strokeThickness = 3;
 let activeFingeringChar = '1'; // currently selected fingering digit
 const FINGERING_SIZE = 13; // base px at fit zoom (normalized on save)
+let fingerTouchNorm   = null; // normalized touch point captured on pen-down
+let fingerPrevButtons = 0;    // previous buttons bitmask for barrel edge detection
 
 // ── Half-page state ──────────────────────────────────────
 let halfPageMode = false;
@@ -1084,22 +1086,12 @@ function setupCanvasPointer(canvas) {
       toast('Add a pen layer first.'); return;
     }
 
-    // Fingering placement — place on tap, no drag needed
+    // Fingering: capture touch point on pen-down, place on pen-up
     if (mode === 'finger') {
-      const norm  = toNorm(e.clientX, e.clientY, canvas);
-      const layer = layers.pen[activePenLayer];
-      const ann   = {
-        type: 'text', char: activeFingeringChar,
-        x: norm.x, y: norm.y,
-        size: FINGERING_SIZE / currentScale(), // normalized
-        color: layer.color, layerId: layer.id
-      };
-      const pg = currentPage;
-      if (!annotations[pg]) annotations[pg] = {};
-      if (!annotations[pg][layer.id]) annotations[pg][layer.id] = [];
-      annotations[pg][layer.id].push(ann);
-      saveAnnotations();
-      redrawAnnotations();
+      if (e.button !== 0) return; // ignore barrel-only events
+      canvas.setPointerCapture(e.pointerId);
+      fingerTouchNorm = toNorm(e.clientX, e.clientY, canvas);
+      fingerPrevButtons = e.buttons;
       e.preventDefault();
       return;
     }
@@ -1127,6 +1119,14 @@ function setupCanvasPointer(canvas) {
     if (e.pointerType === 'touch') return;
     if (!e.buttons) return;
 
+    // Finger mode: detect barrel button leading edge while pen is touching
+    if (mode === 'finger' && fingerTouchNorm) {
+      // Bottom barrel while touching: buttons goes from 1 (tip only) to 33 (tip+barrel)
+      const bottomDown = (e.buttons & 32) && !(fingerPrevButtons & 32);
+      if (bottomDown) cycleFingeringChar(1);
+      fingerPrevButtons = e.buttons;
+    }
+
     if ((mode === 'draw' || mode === 'hl') && currentStroke) {
       const { ctx, canvas: cv } = activeDrawContext();
       const norm = toNorm(e.clientX, e.clientY, cv);
@@ -1153,6 +1153,27 @@ function setupCanvasPointer(canvas) {
 
   canvas.addEventListener('pointerup', async e => {
     if (e.pointerType === 'touch') return;
+
+    // Finger mode: place number at captured touch point
+    if (mode === 'finger' && fingerTouchNorm) {
+      const layer = layers.pen[activePenLayer];
+      const ann   = {
+        type: 'text', char: activeFingeringChar,
+        x: fingerTouchNorm.x, y: fingerTouchNorm.y,
+        size: FINGERING_SIZE / currentScale(),
+        color: layer.color, layerId: layer.id
+      };
+      const pg = currentPage;
+      if (!annotations[pg]) annotations[pg] = {};
+      if (!annotations[pg][layer.id]) annotations[pg][layer.id] = [];
+      annotations[pg][layer.id].push(ann);
+      fingerTouchNorm = null;
+      fingerPrevButtons = 0;
+      await saveAnnotations();
+      redrawAnnotations();
+      return;
+    }
+
     if ((mode === 'draw' || mode === 'hl') && currentStroke) {
       if (currentStroke.points.length >= 2) {
         const pg = currentPage;
@@ -1168,7 +1189,9 @@ function setupCanvasPointer(canvas) {
   });
 
   canvas.addEventListener('pointercancel', () => {
-    currentStroke = null; redrawAnnotations();
+    currentStroke = null;
+    fingerTouchNorm = null; fingerPrevButtons = 0;
+    redrawAnnotations();
   });
 }
 
@@ -1490,6 +1513,15 @@ function selectFingering(char) {
 
 const FINGERING_CHARS = ['1','2','3','4','5'];
 
+function doBarrelAction(dir) {
+  if (mode === 'finger') {
+    cycleFingeringChar(dir);
+  } else {
+    // Always cycle layer when a pen layer exists, regardless of mode
+    cyclePenLayer(dir);
+  }
+}
+
 function cycleFingeringChar(dir) {
   const idx = FINGERING_CHARS.indexOf(activeFingeringChar);
   const next = (idx + dir + FINGERING_CHARS.length) % FINGERING_CHARS.length;
@@ -1524,53 +1556,43 @@ function detectBarrelButtons() {
 
 // Listen on every pointer event type to catch barrel buttons
 // Some drivers fire pointerdown, others fire as buttons on pointermove
-// Track previous buttons bitmask to detect leading edge of bottom barrel
+// Global barrel listeners
+// Bottom barrel (buttons:32) while pen touching in draw/hl/erase:
+// detect leading edge for layer cycling (finger mode handles its own)
 let _prevPenButtons = 0;
 
 document.addEventListener('pointermove', e => {
   if (e.pointerType !== 'pen') return;
-
-  // Detection mode
   if (barrelDetectMode) {
     const info = `pointermove button:${e.button} buttons:${e.buttons}`;
     if (e.buttons > 0 && !barrelLog.has(info)) {
-      barrelLog.add(info);
-      toast(info, 4000);
-      console.log('[Barrel detect]', info);
+      barrelLog.add(info); toast(info, 4000); console.log('[Barrel]', info);
     }
-    _prevPenButtons = e.buttons;
-    return;
+    _prevPenButtons = e.buttons; return;
   }
-
-  // Bottom barrel: fire once on leading edge (buttons goes from !32 to 32)
-  const bottomDown = (e.buttons & 32) && !(_prevPenButtons & 32);
-  if (bottomDown) {
-    if (mode === 'finger') cycleFingeringChar(1);
-    else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(1);
+  // Only handle draw/hl/erase here; finger mode handles its own barrel
+  if (['draw','hl','erase'].includes(mode)) {
+    const bottomDown = (e.buttons & 32) && !(_prevPenButtons & 32);
+    if (bottomDown) cyclePenLayer(1);
   }
   _prevPenButtons = e.buttons;
 }, true);
 
+// Top barrel (button:2) cycles layer backward in draw/hl/erase,
+// or fingering backward in finger mode
 document.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'pen') return;
-
-  // Detection mode
   if (barrelDetectMode) {
     const info = `pointerdown button:${e.button} buttons:${e.buttons}`;
     if (!barrelLog.has(info)) {
-      barrelLog.add(info);
-      toast(info, 4000);
-      console.log('[Barrel detect]', info);
+      barrelLog.add(info); toast(info, 4000); console.log('[Barrel]', info);
     }
     return;
   }
-
-  // Top barrel fires as button===2 on pointerdown
   if (e.button === 2) {
     if (mode === 'finger') cycleFingeringChar(-1);
     else if (['draw','hl','erase'].includes(mode)) cyclePenLayer(-1);
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
   }
 }, true);
 
