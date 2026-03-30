@@ -386,6 +386,88 @@
     #edge-prev { left: 0; }
     #edge-next { right: 0; }
 
+    /* ─── Library / Settings panels ──────────────────────── */
+    .slide-panel {
+      position: fixed; bottom: var(--toolbar-h); left: 0; right: 0;
+      z-index: 99; background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-radius: 14px 14px 0 0;
+      transform: translateY(100%);
+      transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
+      max-height: 65vh; display: flex; flex-direction: column;
+    }
+    .slide-panel.open { transform: translateY(0); }
+    .slide-panel-backdrop {
+      display: none; position: fixed; inset: 0;
+      bottom: var(--toolbar-h); z-index: 98;
+      background: rgba(0,0,0,0.45);
+    }
+    .slide-panel-backdrop.open { display: block; }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px 10px; flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header h3 { font-size: 0.85rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    .panel-close {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 1.1rem; padding: 2px 6px; border-radius: 4px;
+    }
+    .panel-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+    /* Library list */
+    .lib-list { overflow-y: auto; flex: 1; }
+    .lib-list::-webkit-scrollbar { width: 4px; }
+    .lib-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+    .lib-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 16px; cursor: pointer; transition: background 0.1s;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .lib-row:hover { background: rgba(255,255,255,0.04); }
+    .lib-row-icon { color: var(--muted); flex-shrink: 0; }
+    .lib-row-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+    .lib-info { flex: 1; min-width: 0; }
+    .lib-name { font-size: 0.85rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lib-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; font-family: var(--font-mono); }
+    .lib-del { background: none; border: none; color: #333; cursor: pointer; padding: 6px; flex-shrink: 0; border-radius: 4px; }
+    .lib-del:hover { color: var(--danger); background: rgba(224,92,92,0.1); }
+    .lib-del svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+    .lib-empty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 0.82rem; }
+
+    /* Settings rows */
+    .settings-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+    .settings-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 16px; cursor: pointer; transition: background 0.1s;
+    }
+    .settings-row:hover { background: rgba(255,255,255,0.04); }
+    .settings-row-icon { color: var(--accent); flex-shrink: 0; }
+    .settings-row-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .settings-label { flex: 1; font-size: 0.85rem; color: var(--text); }
+    .settings-sub { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    /* Page jump input */
+    #page-jump-wrap {
+      display: none; position: fixed; bottom: calc(var(--toolbar-h) + 10px);
+      left: 50%; transform: translateX(-50%);
+      z-index: 200; background: var(--surface2);
+      border: 1px solid var(--accent); border-radius: 8px;
+      padding: 6px 10px; display: none; align-items: center; gap: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #page-jump-wrap.open { display: flex; }
+    #page-jump-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    #page-jump-input {
+      width: 52px; background: none; border: none; outline: none;
+      font-family: var(--font-mono); font-size: 0.9rem; color: var(--text);
+      text-align: center;
+    }
+    #page-jump-input::-webkit-inner-spin-button { display: none; }
+
     /* ─── Toast ───────────────────────────────────────────── */
     #toast {
       position: fixed; bottom: calc(var(--toolbar-h) + 12px); left: 50%;
@@ -422,6 +504,16 @@
     </button>
 
     <div id="tb-center">
+      <!-- Library -->
+      <button class="tb-btn" id="tb-library" data-tip="Library" onclick="toggleLibrary()">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h12a2 2 0 012 2v14"/><path d="M4 19h16"/><path d="M9 3v16"/></svg>
+      </button>
+
+      <!-- Settings -->
+      <button class="tb-btn" id="tb-settings" data-tip="Export / Import" onclick="toggleSettings()">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+
       <!-- Open -->
       <label class="tb-btn" for="file-input" data-tip="Open (O)">
         <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
@@ -440,7 +532,7 @@
       </button>
 
       <!-- Page number -->
-      <span id="page-pill" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);min-width:44px;text-align:center;flex-shrink:0;">—</span>
+      <button id="page-pill" data-tip="Jump to page" onclick="togglePageJump()" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);min-width:44px;text-align:center;flex-shrink:0;background:none;border:none;cursor:pointer;border-radius:4px;padding:2px 4px;" disabled>—</button>
 
       <div class="tb-divider"></div>
 
@@ -571,6 +663,46 @@
 <div id="edge-prev" class="edge-nav" onclick="edgeNav(-1)"></div>
 <div id="edge-next" class="edge-nav" onclick="edgeNav(1)"></div>
 
+<!-- Library panel -->
+<div class="slide-panel-backdrop" id="library-backdrop" onclick="closeLibrary()"></div>
+<div class="slide-panel" id="library-panel">
+  <div class="panel-header">
+    <h3>Recent Scores</h3>
+    <button class="panel-close" onclick="closeLibrary()">✕</button>
+  </div>
+  <div class="lib-list" id="lib-list"></div>
+</div>
+
+<!-- Settings panel -->
+<div class="slide-panel-backdrop" id="settings-backdrop" onclick="closeSettings()"></div>
+<div class="slide-panel" id="settings-panel">
+  <div class="panel-header">
+    <h3>Export &amp; Import</h3>
+    <button class="panel-close" onclick="closeSettings()">✕</button>
+  </div>
+  <div class="settings-list">
+    <div class="settings-row" onclick="exportData()">
+      <div class="settings-row-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div><div class="settings-label">Export All Data</div><div class="settings-sub">Annotations, layers, splits → JSON file</div></div>
+    </div>
+    <div class="settings-row" onclick="document.getElementById('import-input').click()">
+      <div class="settings-row-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="15"/></svg></div>  
+      <div><div class="settings-label">Import Data</div><div class="settings-sub">Restore from exported JSON file</div></div>
+    </div>
+    <div class="settings-row" onclick="exportAnnotatedPDF()">
+      <div class="settings-row-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+      <div><div class="settings-label">Export Annotated PDF</div><div class="settings-sub">All pages with annotations flattened</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Page jump widget -->
+<div id="page-jump-wrap">
+  <span id="page-jump-label">Go to page</span>
+  <input id="page-jump-input" type="number" min="1" inputmode="numeric" placeholder="—">
+  <span id="page-jump-of" style="font-size:0.72rem;color:var(--muted);font-family:var(--font-mono)"></span>
+</div>
+
 <!-- Split line overlay — fixed so it's always visible above the score -->
 <div id="split-line"></div>
 <div id="split-nudge">
@@ -578,6 +710,7 @@
   <button class="nudge-btn" onclick="nudgeSplit(1)" title="Move split down">↓</button>
 </div>
 
+<input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(event)">
 <input type="file" id="file-input" accept=".pdf,application/pdf" style="display:none" onchange="handleFileInput(event)">
 <div id="toast"></div>
 
@@ -764,10 +897,12 @@ const viewer      = document.getElementById('viewer');
 // INDEXEDDB
 // ═══════════════════════════════════════════════════════════
 const DB_NAME    = 'ScoreReader';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_ANN    = 'annotations';
 const STORE_LAYERS = 'layers';
-const STORE_SPLIT  = 'splitRatios';
+const STORE_SPLIT   = 'splitRatios';
+const STORE_LIBRARY = 'library';    // score history entries
+const STORE_POS     = 'positions';  // last page position per hash
 let db = null;
 
 function openDB() {
@@ -777,7 +912,9 @@ function openDB() {
       const d = e.target.result;
       if (!d.objectStoreNames.contains(STORE_ANN))    d.createObjectStore(STORE_ANN);
       if (!d.objectStoreNames.contains(STORE_LAYERS)) d.createObjectStore(STORE_LAYERS);
-      if (!d.objectStoreNames.contains(STORE_SPLIT))  d.createObjectStore(STORE_SPLIT);
+      if (!d.objectStoreNames.contains(STORE_SPLIT))   d.createObjectStore(STORE_SPLIT);
+      if (!d.objectStoreNames.contains(STORE_LIBRARY)) d.createObjectStore(STORE_LIBRARY);
+      if (!d.objectStoreNames.contains(STORE_POS))     d.createObjectStore(STORE_POS);
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);
@@ -789,6 +926,24 @@ async function dbGet(store, key) {
   return new Promise((resolve, reject) => {
     const req = db.transaction(store, 'readonly').objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function dbGetAll(store) {
+  if (!db) return [];
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, 'readonly').objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result ?? []);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function dbDelete(store, key) {
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store, 'readwrite').objectStore(store).delete(key);
+    req.onsuccess = () => resolve();
     req.onerror   = () => reject(req.error);
   });
 }
@@ -854,6 +1009,22 @@ async function openFile(file) {
     redrawAnnotations();
     applyHalfPageClip();
     updateUI(); updateLayerDots();
+    // Save to library history
+    await dbPut(STORE_LIBRARY, pdfHash, {
+      hash: pdfHash, name: file.name,
+      pages: totalPages, added: Date.now()
+    });
+
+    // Restore last position
+    const savedPos = await dbGet(STORE_POS, pdfHash);
+    if (savedPos && savedPos.page >= 1 && savedPos.page <= totalPages) {
+      currentPage = savedPos.page;
+      await renderPage();
+      redrawAnnotations();
+      applyHalfPageClip();
+      updateUI();
+    }
+
     toast(`${file.name}  ·  ${totalPages} page${totalPages > 1 ? 's' : ''}`);
   } catch (err) {
     console.error(err); toast('Failed to load PDF.');
@@ -958,15 +1129,21 @@ function applyHalfPageClip() {
   scrollInner.classList.add('half-page-centered');
   scrollSpacer.style.display = 'none';
 
-  const s       = getPageSplit();
-  const topPx    = Math.round(canvasH * s.top);
-  const bottomPx = Math.round(canvasH * s.bottom);
+  const s        = getPageSplit();
+  // Guard: top must be > 0 and bottom must be < 1 and top <= bottom
+  const safeTop    = Math.max(0.08, Math.min(s.top, 0.92));
+  const safeBottom = Math.max(safeTop, Math.min(s.bottom, 0.92));
+  const topPx    = Math.round(canvasH * safeTop);
+  const bottomPx = Math.round(canvasH * safeBottom);
 
+  // Guard: clip height must be at least 20px to avoid invisible half
   if (halfPageSide === 'top') {
-    clipWrap.style.height = topPx + 'px';
+    const h = Math.max(20, topPx);
+    clipWrap.style.height = h + 'px';
     canvasWrap.style.top  = '0px';
   } else {
-    clipWrap.style.height = (canvasH - bottomPx) + 'px';
+    const h = Math.max(20, canvasH - bottomPx);
+    clipWrap.style.height = h + 'px';
     canvasWrap.style.top  = '-' + bottomPx + 'px';
   }
 
@@ -1067,6 +1244,7 @@ async function gotoHalfIndex(idx) {
   updateUI();
   if (pageChanged) { await renderPage(); redrawAnnotations(); }
   applyHalfPageClip();
+  if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
 }
 
 async function halfPageAdvance() { await gotoHalfIndex(halfVirtualIndex() + 1); }
@@ -1297,17 +1475,18 @@ setupCanvasPointer(hlCanvas);
 
 // ─── Eraser ───────────────────────────────────────────────
 function eraseAt(clientX, clientY) {
-  // Erase from active pen layer only (or all visible pen layers if none active)
-  const pos  = toNorm(clientX, clientY, annCanvas);
-  const pg   = annotations[currentPage];
+  // Erase from all visible pen AND hl layers
+  const pos = toNorm(clientX, clientY, annCanvas);
+  const pg  = annotations[currentPage];
   if (!pg) return;
   let changed = false;
 
-  const targetLayers = activePenLayer >= 0
-    ? [layers.pen[activePenLayer]]
-    : layers.pen.filter(l => l.visible);
+  const allTargets = [
+    ...layers.pen.filter(l => l.visible),
+    ...layers.hl.filter(l => l.visible)
+  ];
 
-  for (const layer of targetLayers) {
+  for (const layer of allTargets) {
     if (!pg[layer.id]) continue;
     const before = pg[layer.id].length;
     pg[layer.id] = pg[layer.id].filter(ann => {
@@ -1739,6 +1918,7 @@ async function changePage(delta) {
   await renderPage();
   redrawAnnotations();
   applyHalfPageClip();
+  if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1785,7 +1965,9 @@ async function rotatePage() {
 // PAN
 // ═══════════════════════════════════════════════════════════
 viewer.addEventListener('pointerdown', e => {
+  // Only pan with finger/mouse — never intercept pen (it draws on ann-canvas)
   if (mode !== 'pan' || e.button !== 0) return;
+  if (e.pointerType === 'pen') return;
   isPanning = true; panStartX = e.clientX; panStartY = e.clientY;
   panScrollX = viewer.scrollLeft; panScrollY = viewer.scrollTop;
   viewer.classList.add('is-panning');
@@ -1798,6 +1980,69 @@ viewer.addEventListener('pointermove', e => {
 });
 viewer.addEventListener('pointerup',     () => { isPanning = false; viewer.classList.remove('is-panning'); });
 viewer.addEventListener('pointercancel', () => { isPanning = false; viewer.classList.remove('is-panning'); });
+
+// ─── Pinch-to-zoom ────────────────────────────────────────
+// Use touch events (not pointer events) for reliable multi-touch pinch.
+// Works regardless of draw mode — fingers never draw.
+let _pinchStartDist  = 0;
+let _pinchStartScale = 1;
+let _pinching        = false;
+
+function _touchDist(t) {
+  const dx = t[0].clientX - t[1].clientX;
+  const dy = t[0].clientY - t[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+viewer.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) {
+    _pinching = true;
+    _pinchStartDist  = _touchDist(e.touches);
+    _pinchStartScale = currentScale();
+    e.preventDefault();
+  }
+}, { passive: false });
+
+viewer.addEventListener('touchmove', e => {
+  if (!_pinching || e.touches.length !== 2) return;
+  e.preventDefault();
+
+  const dist  = _touchDist(e.touches);
+  const ratio = dist / _pinchStartDist;
+  const target = _pinchStartScale * ratio;
+
+  // Find closest zoom level to target scale
+  let bestIdx = 0, bestDiff = Infinity;
+  const base = fitScale;
+  for (let i = ZOOM_MIN; i <= ZOOM_MAX; i++) {
+    const s = base * Math.pow(ZOOM_STEP, i);
+    const d = Math.abs(s - target);
+    if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+  }
+
+  if (bestIdx !== zoomLevel) {
+    // Anchor zoom to pinch midpoint
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const cx = viewer.scrollLeft + mx;
+    const cy = viewer.scrollTop  + my;
+    const oldW = pdfCanvas.offsetWidth  || 1;
+    const oldH = pdfCanvas.offsetHeight || 1;
+
+    zoomLevel = bestIdx;
+    updateUI();
+    renderPage().then(() => {
+      redrawAnnotations();
+      applyHalfPageClip();
+      viewer.scrollLeft = cx * (pdfCanvas.offsetWidth / oldW)  - mx;
+      viewer.scrollTop  = cy * (pdfCanvas.offsetHeight / oldH) - my;
+    });
+  }
+}, { passive: false });
+
+viewer.addEventListener('touchend', e => {
+  if (e.touches.length < 2) _pinching = false;
+}, { passive: true });
 
 // ═══════════════════════════════════════════════════════════
 // FULLSCREEN
@@ -1857,7 +2102,309 @@ function updateUI() {
   document.getElementById('tb-nudge').disabled   = !has;
   document.getElementById('tb-finger').disabled  = !has;
   zoomPill.disabled = !has;
+  const ppBtn = document.getElementById('page-pill');
+  if (ppBtn) ppBtn.disabled = !has;
 }
+
+// ═══════════════════════════════════════════════════════════
+// LIBRARY
+// ═══════════════════════════════════════════════════════════
+let _pendingLibHash = null; // hash of score user wants to reopen
+
+function toggleLibrary() {
+  const panel = document.getElementById('library-panel');
+  if (panel.classList.contains('open')) { closeLibrary(); return; }
+  renderLibrary();
+  panel.classList.add('open');
+  document.getElementById('library-backdrop').classList.add('open');
+}
+function closeLibrary() {
+  document.getElementById('library-panel').classList.remove('open');
+  document.getElementById('library-backdrop').classList.remove('open');
+}
+
+async function renderLibrary() {
+  const list = document.getElementById('lib-list');
+  const entries = await dbGetAll(STORE_LIBRARY);
+  entries.sort((a,b) => (b.added||0) - (a.added||0));
+  list.innerHTML = '';
+  if (entries.length === 0) {
+    list.innerHTML = '<div class="lib-empty">No scores opened yet.</div>'; return;
+  }
+  for (const entry of entries) {
+    const pos = await dbGet(STORE_POS, entry.hash);
+    const row = document.createElement('div');
+    row.className = 'lib-row';
+    const dateStr = entry.added ? new Date(entry.added).toLocaleDateString() : '';
+    const pageStr = pos ? `Last: p.${pos.page}` : '';
+    row.innerHTML = `
+      <div class="lib-row-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div class="lib-info">
+        <div class="lib-name">${entry.name}</div>
+        <div class="lib-meta">${entry.pages} pages${pageStr ? '  ·  ' + pageStr : ''}${dateStr ? '  ·  ' + dateStr : ''}</div>
+      </div>
+      <button class="lib-del" title="Remove from library" onclick="removeFromLibrary('${entry.hash}', event)">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+    row.addEventListener('click', () => openFromLibrary(entry));
+    list.appendChild(row);
+  }
+}
+
+function openFromLibrary(entry) {
+  _pendingLibHash = entry.hash;
+  toast(`Opening: ${entry.name}`);
+  closeLibrary();
+  // Trigger file picker — when the correct file is chosen openFile will match hash
+  document.getElementById('file-input').click();
+}
+
+async function removeFromLibrary(hash, e) {
+  e.stopPropagation();
+  await dbDelete(STORE_LIBRARY, hash);
+  renderLibrary();
+}
+
+// ═══════════════════════════════════════════════════════════
+// SETTINGS / EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════
+function toggleSettings() {
+  const panel = document.getElementById('settings-panel');
+  if (panel.classList.contains('open')) { closeSettings(); return; }
+  panel.classList.add('open');
+  document.getElementById('settings-backdrop').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settings-panel').classList.remove('open');
+  document.getElementById('settings-backdrop').classList.remove('open');
+}
+
+async function exportData() {
+  toast('Preparing export…');
+  try {
+    const allAnn    = await dbGetAll(STORE_ANN);
+    const allLayers = await dbGetAll(STORE_LAYERS);
+    const allSplit  = await dbGetAll(STORE_SPLIT);
+    const allLib    = await dbGetAll(STORE_LIBRARY);
+    const allPos    = await dbGetAll(STORE_POS);
+
+    // dbGetAll returns values; we need key-value pairs
+    // Re-fetch with keys via cursor
+    const dump = { version: 1, exported: Date.now(),
+      annotations: {}, layers: {}, splits: {}, library: {}, positions: {} };
+
+    // Helper to read all keys+values from a store
+    const readStore = (storeName) => new Promise((resolve) => {
+      if (!db) return resolve({});
+      const result = {};
+      const tx = db.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).openCursor();
+      req.onsuccess = e => {
+        const cursor = e.target.result;
+        if (cursor) { result[cursor.key] = cursor.value; cursor.continue(); }
+        else resolve(result);
+      };
+      req.onerror = () => resolve({});
+    });
+
+    dump.annotations = await readStore(STORE_ANN);
+    dump.layers      = await readStore(STORE_LAYERS);
+    dump.splits      = await readStore(STORE_SPLIT);
+    dump.library     = await readStore(STORE_LIBRARY);
+    dump.positions   = await readStore(STORE_POS);
+
+    const blob = new Blob([JSON.stringify(dump)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `ScoreReader-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+    toast('Export complete.');
+  } catch(e) { console.error(e); toast('Export failed: ' + e.message); }
+}
+
+async function importData(e) {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const dump = JSON.parse(text);
+    if (!dump.version) throw new Error('Invalid backup file.');
+    const stores = [
+      [STORE_ANN, dump.annotations],[STORE_LAYERS, dump.layers],
+      [STORE_SPLIT, dump.splits],[STORE_LIBRARY, dump.library],
+      [STORE_POS, dump.positions]
+    ];
+    for (const [storeName, data] of stores) {
+      if (!data) continue;
+      for (const [key, value] of Object.entries(data)) {
+        await dbPut(storeName, key, value);
+      }
+    }
+    toast('Import complete. Reload to see changes.');
+    closeSettings();
+  } catch(e) { console.error(e); toast('Import failed: ' + e.message); }
+}
+
+async function exportAnnotatedPDF() {
+  if (!pdfDoc) { toast('No score loaded.'); return; }
+  toast('Preparing annotated PDF… (may take a moment)');
+  closeSettings();
+  try {
+    // Load pdf-lib dynamically
+    if (!window.PDFLib) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const { PDFDocument } = window.PDFLib;
+
+    // Get the original PDF bytes via re-rendering trick:
+    // We need the raw bytes — ask user to confirm we re-render all pages
+    // We'll build a new PDF from rendered canvas images
+    const exportDoc = await PDFDocument.create();
+    const scale = currentScale();
+    const dpr   = window.devicePixelRatio || 1;
+    const savedPage = currentPage;
+
+    for (let p = 1; p <= totalPages; p++) {
+      // Render PDF page
+      const pdfPage = await pdfDoc.getPage(p);
+      const viewport = pdfPage.getViewport({ scale, rotation });
+      const cssW = Math.floor(viewport.width);
+      const cssH = Math.floor(viewport.height);
+
+      // Render to offscreen canvas
+      const oc  = new OffscreenCanvas(cssW * dpr, cssH * dpr);
+      const octx = oc.getContext('2d');
+      octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const task = pdfPage.render({ canvasContext: octx, viewport });
+      await task.promise;
+
+      // Draw annotations on top
+      const pageAnns = annotations[p] || {};
+      // highlight layers
+      for (const layer of layers.hl) {
+        if (!layer.visible) continue;
+        const strokes = pageAnns[layer.id] || [];
+        for (const s of strokes) {
+          if (s.type === 'text') {
+            const px = s.x * cssW; const py = s.y * cssH;
+            const sz = Math.max(6, s.size * scale);
+            octx.save();
+            octx.font = `900 ${sz}px "Merriweather", serif`;
+            octx.fillStyle = layer.color; octx.globalAlpha = 1;
+            octx.textAlign = 'center'; octx.textBaseline = 'middle';
+            octx.fillText(s.char, px, py); octx.restore();
+          } else if (s.points && s.points.length > 1) {
+            octx.save();
+            octx.globalAlpha = 0.35;
+            octx.strokeStyle = layer.color;
+            octx.lineWidth = Math.max(1, s.thickness * scale * 8);
+            octx.lineCap = 'round'; octx.lineJoin = 'round';
+            octx.beginPath();
+            octx.moveTo(s.points[0].x * cssW, s.points[0].y * cssH);
+            for (let i=1;i<s.points.length;i++) octx.lineTo(s.points[i].x*cssW, s.points[i].y*cssH);
+            octx.stroke(); octx.restore();
+          }
+        }
+      }
+      // pen layers
+      for (const layer of layers.pen) {
+        if (!layer.visible) continue;
+        const strokes = pageAnns[layer.id] || [];
+        for (const s of strokes) {
+          if (s.type === 'text') {
+            const px = s.x * cssW; const py = s.y * cssH;
+            const sz = Math.max(6, s.size * scale);
+            octx.save();
+            octx.font = `900 ${sz}px "Merriweather", serif`;
+            octx.fillStyle = layer.color; octx.globalAlpha = 1;
+            octx.textAlign = 'center'; octx.textBaseline = 'middle';
+            octx.fillText(s.char, px, py); octx.restore();
+          } else if (s.points && s.points.length > 1) {
+            octx.save();
+            octx.strokeStyle = layer.color;
+            octx.lineWidth = Math.max(0.5, s.thickness * scale);
+            octx.lineCap = 'round'; octx.lineJoin = 'round';
+            octx.beginPath();
+            octx.moveTo(s.points[0].x*cssW, s.points[0].y*cssH);
+            for (let i=1;i<s.points.length;i++) octx.lineTo(s.points[i].x*cssW, s.points[i].y*cssH);
+            octx.stroke(); octx.restore();
+          }
+        }
+      }
+
+      // Convert to PNG and embed in PDF
+      const blob    = await oc.convertToBlob({ type: 'image/png' });
+      const arrBuf  = await blob.arrayBuffer();
+      const pngImg  = await exportDoc.embedPng(arrBuf);
+      const newPage = exportDoc.addPage([cssW, cssH]);
+      newPage.drawImage(pngImg, { x: 0, y: 0, width: cssW, height: cssH });
+    }
+
+    const pdfBytes = await exportDoc.save();
+    const blob2    = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url      = URL.createObjectURL(blob2);
+    const a        = document.createElement('a');
+    a.href = url;
+    a.download = (pdfHash ? 'annotated-score' : 'score') + '.pdf';
+    a.click(); URL.revokeObjectURL(url);
+    toast('Annotated PDF downloaded.');
+  } catch(e) { console.error(e); toast('PDF export failed: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAGE JUMP
+// ═══════════════════════════════════════════════════════════
+let pageJumpOpen = false;
+
+function togglePageJump() {
+  if (!pdfDoc) return;
+  pageJumpOpen = !pageJumpOpen;
+  const wrap = document.getElementById('page-jump-wrap');
+  const input = document.getElementById('page-jump-input');
+  document.getElementById('page-jump-of').textContent = '/ ' + totalPages;
+  wrap.classList.toggle('open', pageJumpOpen);
+  if (pageJumpOpen) { input.value = ''; input.focus(); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('page-jump-input');
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter') {
+      const n = parseInt(input.value, 10);
+      if (n >= 1 && n <= totalPages) {
+        currentPage = n;
+        halfPageSide = 'top';
+        viewer.scrollTo(0, viewer.scrollHeight);
+        updateUI();
+        await renderPage();
+        redrawAnnotations();
+        applyHalfPageClip();
+        if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
+      } else {
+        toast(`Page must be between 1 and ${totalPages}`);
+      }
+      pageJumpOpen = false;
+      document.getElementById('page-jump-wrap').classList.remove('open');
+    }
+    if (e.key === 'Escape') {
+      pageJumpOpen = false;
+      document.getElementById('page-jump-wrap').classList.remove('open');
+    }
+  });
+  // Close on outside tap
+  document.addEventListener('pointerdown', e => {
+    if (pageJumpOpen && !document.getElementById('page-jump-wrap').contains(e.target)
+        && e.target.id !== 'page-pill') {
+      pageJumpOpen = false;
+      document.getElementById('page-jump-wrap').classList.remove('open');
+    }
+  });
+});
 
 // ═══════════════════════════════════════════════════════════
 // TOAST / LOADING
