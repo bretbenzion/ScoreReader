@@ -61,19 +61,12 @@
       min-height: 100%; width: max-content; min-width: 100%;
       padding: 16px 16px 0; position: relative; z-index: 1;
     }
-    /* In half-page mode: center the clip-wrap vertically */
-    #scroll-inner.half-page-centered {
-      justify-content: center;
-      padding: 0 16px;
-    }
     #scroll-spacer { flex: 1; min-height: 0; }
 
     /* ─── Canvas stack ────────────────────────────────────── */
-    /* clip-wrap clips canvas-wrap to show only top or bottom half in half-page mode */
     #clip-wrap {
       position: relative; display: block; flex-shrink: 0; overflow: hidden;
     }
-    /* canvas-wrap is absolute inside clip-wrap so top offset works for half-page */
     #canvas-wrap { position: absolute; top: 0; left: 0; display: block; }
 
     #pdf-canvas {
@@ -344,36 +337,6 @@
     .color-swatch.selected { border-color: #fff; }
 
     /* ─── Half-page split UI ─────────────────────────────── */
-    /* Split line — fixed overlay, always above the score and toolbar */
-    #split-line {
-      display: none;
-      position: fixed; left: 0; right: 0;
-      height: 3px; background: var(--accent);
-      cursor: ns-resize; z-index: 200;
-      box-shadow: 0 1px 6px rgba(91,140,247,0.6);
-      pointer-events: auto;
-    }
-    #split-line::before {
-      content: ''; position: absolute;
-      left: 0; right: 0; top: -12px; bottom: -12px;
-    }
-    #split-line.visible { display: block; }
-
-    #split-nudge {
-      display: none;
-      position: fixed; right: 90px;
-      transform: translateY(-50%);
-      z-index: 201; gap: 4px; align-items: center;
-    }
-    #split-nudge.visible { display: flex; }
-    .nudge-btn {
-      background: var(--surface); border: 1px solid var(--border);
-      color: var(--text); border-radius: 5px; width: 30px; height: 26px;
-      font-size: 0.9rem; cursor: pointer; display: flex;
-      align-items: center; justify-content: center;
-      transition: background 0.1s; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    }
-    .nudge-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
     /* ─── Edge tap navigation zones ─────────────────────── */
     .edge-nav {
@@ -468,6 +431,57 @@
     }
     #page-jump-input::-webkit-inner-spin-button { display: none; }
 
+    /* ─── Crop system ────────────────────────────────────── */
+    /* crop-wrap: clips the canvas to a zone */
+    #crop-wrap {
+      position: relative; display: block; flex-shrink: 0;
+      overflow: hidden;
+    }
+    /* In crop mode, center vertically */
+    #scroll-inner.crop-centered {
+      justify-content: center;
+      padding: 0 16px;
+    }
+
+    /* Crop divider lines (fixed overlay, like old split-line) */
+    .crop-divider {
+      position: fixed; left: 0; right: 0; height: 2px;
+      background: var(--accent); z-index: 200;
+      pointer-events: none;
+      box-shadow: 0 0 6px rgba(91,140,247,0.5);
+    }
+    .crop-divider.editable {
+      pointer-events: auto; cursor: ns-resize; height: 4px;
+    }
+    .crop-divider.editable::before {
+      content: ''; position: absolute;
+      left: 0; right: 0; top: -12px; bottom: -12px;
+    }
+
+    /* Skip zone overlay */
+    .crop-zone-skip {
+      position: fixed; right: 80px;
+      z-index: 201;
+    }
+    .crop-zone-skip button {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 5px; padding: 3px 8px;
+      font-size: 0.72rem; cursor: pointer; letter-spacing: 0.03em;
+      transition: background 0.1s;
+    }
+    .crop-zone-skip button:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .crop-zone-skip button.skipped { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+    /* Add divider button (edit mode) */
+    #crop-add-btn {
+      display: none; position: fixed; right: 80px;
+      z-index: 201;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 5px; padding: 4px 10px; font-size: 0.72rem;
+      cursor: pointer; letter-spacing: 0.03em;
+    }
+    #crop-add-btn.visible { display: block; }
+
     /* ─── Toast ───────────────────────────────────────────── */
     #toast {
       position: fixed; bottom: calc(var(--toolbar-h) + 12px); left: 50%;
@@ -487,8 +501,7 @@
   <div id="viewer">
     <div id="viewer-bg"></div>
     <div id="scroll-inner">
-      <div id="scroll-spacer"></div>
-      <div id="clip-wrap">
+      <div id="crop-wrap">
         <div id="canvas-wrap">
           <canvas id="pdf-canvas"></canvas>
           <canvas id="hl-canvas"></canvas>
@@ -593,12 +606,12 @@
 
       <div class="tb-divider"></div>
 
-      <!-- Half-page -->
-      <button class="tb-btn" id="tb-half" data-tip="Half Page (V)" onclick="toggleHalfPage()" disabled>
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="3" x2="12" y2="12"/></svg>
+      <!-- Crop mode -->
+      <button class="tb-btn" id="tb-crop" data-tip="Crop Mode (V)" onclick="toggleCropMode()" disabled>
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
       </button>
-      <button class="tb-btn" id="tb-nudge" data-tip="Adjust Split" onclick="toggleNudge()" disabled>
-        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 10 12 3 19 10"/><polyline points="5 14 12 21 19 14"/></svg>
+      <button class="tb-btn" id="tb-crop-edit" data-tip="Edit Crops" onclick="toggleCropEdit()" disabled style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>
 
       <!-- Pan -->
@@ -701,13 +714,6 @@
   <span id="page-jump-label">Go to page</span>
   <input id="page-jump-input" type="number" min="1" inputmode="numeric" placeholder="—">
   <span id="page-jump-of" style="font-size:0.72rem;color:var(--muted);font-family:var(--font-mono)"></span>
-</div>
-
-<!-- Split line overlay — fixed so it's always visible above the score -->
-<div id="split-line"></div>
-<div id="split-nudge">
-  <button class="nudge-btn" onclick="nudgeSplit(-1)" title="Move split up">↑</button>
-  <button class="nudge-btn" onclick="nudgeSplit(1)" title="Move split down">↓</button>
 </div>
 
 <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(event)">
@@ -850,32 +856,6 @@ let fingerPrevButtons = 0;
 // Undo stack: array of {page, layerId, index} for last annotation per action
 let undoStack = [];
 
-// ── Half-page state ──────────────────────────────────────
-let halfPageMode = false;
-let halfPageSide = 'top'; // 'top' | 'bottom'
-let splitRatios  = {}; // page-keyed: splitRatios[pageNum] = { top: 0-1, bottom: 0-1 }
-// top   = where the top-half clip ends (fraction of page height)
-// bottom = where the bottom-half clip starts (same point by default, can differ)
-function getPageSplit() {
-  const k = String(currentPage);
-  if (!splitRatios[k]) splitRatios[k] = { top: 0.5, bottom: 0.5 };
-  return splitRatios[k];
-}
-function getSplitRatio() {
-  const s = getPageSplit();
-  return halfPageSide === 'bottom' ? s.bottom : s.top;
-}
-function setSplitRatio(v) {
-  const k = String(currentPage);
-  if (!splitRatios[k]) splitRatios[k] = { top: 0.5, bottom: 0.5 };
-  const clamped = Math.min(0.92, Math.max(0.08, v));
-  if (halfPageSide === 'top' || !halfPageMode) {
-    splitRatios[k].top    = clamped;
-    splitRatios[k].bottom = clamped; // keep in sync unless independently set
-  } else {
-    splitRatios[k].bottom = clamped;
-  }
-}
 let layerIdCounter  = 1;
 
 // ═══════════════════════════════════════════════════════════
@@ -897,10 +877,9 @@ const viewer      = document.getElementById('viewer');
 // INDEXEDDB
 // ═══════════════════════════════════════════════════════════
 const DB_NAME    = 'ScoreReader';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_ANN    = 'annotations';
 const STORE_LAYERS = 'layers';
-const STORE_SPLIT   = 'splitRatios';
 const STORE_LIBRARY = 'library';    // score history entries
 const STORE_POS     = 'positions';  // last page position per hash
 let db = null;
@@ -912,9 +891,9 @@ function openDB() {
       const d = e.target.result;
       if (!d.objectStoreNames.contains(STORE_ANN))    d.createObjectStore(STORE_ANN);
       if (!d.objectStoreNames.contains(STORE_LAYERS)) d.createObjectStore(STORE_LAYERS);
-      if (!d.objectStoreNames.contains(STORE_SPLIT))   d.createObjectStore(STORE_SPLIT);
       if (!d.objectStoreNames.contains(STORE_LIBRARY)) d.createObjectStore(STORE_LIBRARY);
       if (!d.objectStoreNames.contains(STORE_POS))     d.createObjectStore(STORE_POS);
+      if (!d.objectStoreNames.contains(STORE_CROPS))   d.createObjectStore(STORE_CROPS);
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror   = e => reject(e.target.error);
@@ -989,10 +968,14 @@ async function openFile(file) {
     // Load saved data
     const savedAnn    = await dbGet(STORE_ANN,    pdfHash);
     const savedLayers = await dbGet(STORE_LAYERS, pdfHash);
-    const savedSplit  = await dbGet(STORE_SPLIT,  pdfHash);
-    splitRatios = (savedSplit != null && typeof savedSplit === 'object') ? savedSplit : {};
     undoStack = [];
     invalidateCache();
+    crops = {};
+    const savedCrops = await dbGet(STORE_CROPS, pdfHash);
+    if (savedCrops && typeof savedCrops === 'object') crops = savedCrops;
+    // Reset crop mode state for new file
+    cropIndex = 0; cropEditMode = false;
+    removeCropEditUI();
     annotations = savedAnn    || {};
     if (savedLayers) {
       layers = savedLayers.layers || { pen: [], hl: [] };
@@ -1007,7 +990,6 @@ async function openFile(file) {
     await computeFitScale();
     await renderPage();
     redrawAnnotations();
-    applyHalfPageClip();
     updateUI(); updateLayerDots();
     // Save to library history
     await dbPut(STORE_LIBRARY, pdfHash, {
@@ -1021,8 +1003,7 @@ async function openFile(file) {
       currentPage = savedPos.page;
       await renderPage();
       redrawAnnotations();
-      applyHalfPageClip();
-      updateUI();
+        updateUI();
     }
 
     toast(`${file.name}  ·  ${totalPages} page${totalPages > 1 ? 's' : ''}`);
@@ -1096,159 +1077,324 @@ async function renderPage() {
   } catch(e) { /* ImageBitmap not critical */ }
 
   prefetchAdjacentPages();
+  applyCropClip();
 }
 
-// ═══════════════════════════════════════════════════════════
-// HALF-PAGE CLIPPING
-// ═══════════════════════════════════════════════════════════
 
-function applyHalfPageClip() {
-  const clipWrap   = document.getElementById('clip-wrap');
+
+// ═══════════════════════════════════════════════════════════
+// CROP SYSTEM
+// ═══════════════════════════════════════════════════════════
+// crops[pageNum] = { dividers: [0.35, 0.67], skipped: [false,false,false] }
+// Up to 3 dividers → up to 4 zones. Max 4 zones enforced.
+// Navigation index: list of {page, zone} for all non-skipped zones.
+
+let cropMode     = false;   // reading mode active
+let cropEditMode = false;   // edit dividers for current page
+let cropIndex    = 0;       // current position in navigation sequence
+let crops        = {};      // per-page crop data
+
+// Divider drag state
+let _cropDragIdx   = -1;
+let _cropDragStart = 0;
+let _cropDragOrig  = 0;
+
+// ── Helpers ───────────────────────────────────────────────
+function getPageCrops(pg) {
+  if (!crops[pg]) crops[pg] = { dividers: [], skipped: [] };
+  // Ensure skipped array length = dividers.length + 1
+  const needed = crops[pg].dividers.length + 1;
+  while (crops[pg].skipped.length < needed) crops[pg].skipped.push(false);
+  while (crops[pg].skipped.length > needed) crops[pg].skipped.pop();
+  return crops[pg];
+}
+
+function zoneCount(pg) {
+  return getPageCrops(pg).dividers.length + 1;
+}
+
+// Build ordered navigation sequence: [{page, zone}] for all non-skipped zones
+function buildCropSequence() {
+  const seq = [];
+  for (let p = 1; p <= totalPages; p++) {
+    const c = getPageCrops(p);
+    for (let z = 0; z < c.dividers.length + 1; z++) {
+      if (!c.skipped[z]) seq.push({ page: p, zone: z });
+    }
+  }
+  return seq;
+}
+
+// Find the index in the sequence closest to current page
+function findCropIndex(seq, targetPage, targetZone) {
+  for (let i = 0; i < seq.length; i++) {
+    if (seq[i].page === targetPage && seq[i].zone === (targetZone ?? 0)) return i;
+  }
+  // Fallback: find first entry for the page
+  for (let i = 0; i < seq.length; i++) {
+    if (seq[i].page === targetPage) return i;
+  }
+  return 0;
+}
+
+// ── Apply viewport clip ───────────────────────────────────
+function applyCropClip() {
+  const cropWrap   = document.getElementById('crop-wrap');
   const canvasWrap = document.getElementById('canvas-wrap');
-  const splitLine  = document.getElementById('split-line');
-  const splitNudge = document.getElementById('split-nudge');
   const scrollInner = document.getElementById('scroll-inner');
-  const scrollSpacer = document.getElementById('scroll-spacer');
-  const canvasW    = pdfCanvas.offsetWidth;
   const canvasH    = pdfCanvas.offsetHeight;
+  const canvasW    = pdfCanvas.offsetWidth;
 
-  clipWrap.style.width = canvasW + 'px';
+  cropWrap.style.width = canvasW + 'px';
 
-  if (!halfPageMode || !pdfDoc) {
-    clipWrap.style.height = canvasH + 'px';
+  if (!cropMode || !pdfDoc) {
+    // Full page — no clip
+    cropWrap.style.height = canvasH + 'px';
     canvasWrap.style.top  = '0px';
-    splitLine.classList.remove('visible');
-    splitNudge.classList.remove('visible');
-    // Restore bottom-anchor layout
-    scrollInner.classList.remove('half-page-centered');
-    scrollSpacer.style.display = '';
+    scrollInner.classList.remove('crop-centered');
+    cropWrap.style.overflow = 'visible';
     return;
   }
 
-  // Switch to centered layout for half-page mode
-  scrollInner.classList.add('half-page-centered');
-  scrollSpacer.style.display = 'none';
+  // Centered layout
+  scrollInner.classList.add('crop-centered');
+  cropWrap.style.overflow = 'hidden';
 
-  const s        = getPageSplit();
-  // Guard: top must be > 0 and bottom must be < 1 and top <= bottom
-  const safeTop    = Math.max(0.08, Math.min(s.top, 0.92));
-  const safeBottom = Math.max(safeTop, Math.min(s.bottom, 0.92));
-  const topPx    = Math.round(canvasH * safeTop);
-  const bottomPx = Math.round(canvasH * safeBottom);
-
-  // Guard: clip height must be at least 20px to avoid invisible half
-  if (halfPageSide === 'top') {
-    const h = Math.max(20, topPx);
-    clipWrap.style.height = h + 'px';
+  const seq = buildCropSequence();
+  if (seq.length === 0) {
+    cropWrap.style.height = canvasH + 'px';
     canvasWrap.style.top  = '0px';
-  } else {
-    const h = Math.max(20, canvasH - bottomPx);
-    clipWrap.style.height = h + 'px';
-    canvasWrap.style.top  = '-' + bottomPx + 'px';
+    return;
   }
 
-  if (nudgeVisible) {
-    const clipRect = clipWrap.getBoundingClientRect();
-    const screenY  = clipRect.bottom;
-    splitLine.style.top  = screenY + 'px';
-    splitNudge.style.top = screenY + 'px';
-    splitLine.classList.add('visible');
-    splitNudge.classList.add('visible');
-  } else {
-    splitLine.classList.remove('visible');
-    splitNudge.classList.remove('visible');
+  const ci  = Math.max(0, Math.min(cropIndex, seq.length - 1));
+  const { page, zone } = seq[ci];
+
+  if (page !== currentPage) {
+    // Shouldn't happen, but safe fallback
+    cropWrap.style.height = canvasH + 'px';
+    canvasWrap.style.top  = '0px';
+    return;
   }
+
+  const c = getPageCrops(page);
+  const divs = [0, ...c.dividers, 1]; // zone boundaries as fractions
+  const topFrac = divs[zone];
+  const botFrac = divs[zone + 1];
+  const topPx   = Math.round(canvasH * topFrac);
+  const botPx   = Math.round(canvasH * botFrac);
+  const h       = Math.max(20, botPx - topPx);
+
+  cropWrap.style.height = h + 'px';
+  canvasWrap.style.top  = '-' + topPx + 'px';
 }
 
-// ─── Split ratio persistence ──────────────────────────────
-async function saveSplitRatio() {
-  if (!pdfHash) return;
-  try { await dbPut(STORE_SPLIT, pdfHash, splitRatios); } catch(e) {}
-}
-
-// Nudge split by N% of page height
-function nudgeSplit(dir) {
-  setSplitRatio(getSplitRatio() + dir * 0.01);
-  applyHalfPageClip();
-  saveSplitRatio();
-}
-
-// ─── Drag the split line ──────────────────────────────────
-(function() {
-  let dragging = false;
-  let dragStartY = 0, dragStartRatio = 0;
-
-  document.getElementById('split-line').addEventListener('pointerdown', e => {
-    if (!halfPageMode) return;
-    dragging = true;
-    dragStartY     = e.clientY;
-    dragStartRatio = getSplitRatio();
-    document.getElementById('split-line').setPointerCapture(e.pointerId);
-    e.stopPropagation(); e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener('pointermove', e => {
-    if (!dragging) return;
-    const canvasH = pdfCanvas.offsetHeight;
-    if (canvasH === 0) return;
-    const dy    = e.clientY - dragStartY;
-    const delta = dy / canvasH;
-    setSplitRatio(dragStartRatio + delta);
-    applyHalfPageClip();
-  });
-
-  document.addEventListener('pointerup', e => {
-    if (!dragging) return;
-    dragging = false;
-    saveSplitRatio();
-  });
-})();
-
-let nudgeVisible = false;
-
-function toggleNudge() {
-  if (!halfPageMode) return;
-  nudgeVisible = !nudgeVisible;
-  document.getElementById('tb-nudge').classList.toggle('active', nudgeVisible);
-  applyHalfPageClip(); // re-apply to show/hide nudge
-}
-
-function toggleHalfPage() {
+// ── Toggle crop mode ──────────────────────────────────────
+async function toggleCropMode() {
   if (!pdfDoc) return;
-  halfPageMode = !halfPageMode;
-  halfPageSide = 'top';
-  if (!halfPageMode) { nudgeVisible = false; document.getElementById('tb-nudge').classList.remove('active'); }
-  document.getElementById('tb-half').classList.toggle('active', halfPageMode);
-  applyHalfPageClip();
+  cropMode = !cropMode;
+  if (!cropMode) {
+    cropEditMode = false;
+    document.getElementById('tb-crop-edit').style.display = 'none';
+    document.getElementById('tb-crop').classList.remove('active');
+    document.getElementById('tb-crop-edit').classList.remove('active');
+    removeCropEditUI();
+  } else {
+    document.getElementById('tb-crop-edit').style.display = '';
+    document.getElementById('tb-crop').classList.add('active');
+    // Find starting position in sequence
+    const seq = buildCropSequence();
+    cropIndex = findCropIndex(seq, currentPage, 0);
+    if (seq.length > 0) currentPage = seq[Math.max(0,cropIndex)].page;
+    toast('Crop mode on · use Edit to define crops');
+  }
   updateUI();
-  if (halfPageMode) toast('Half-page on  ·  use split adjuster to reposition');
+  applyCropClip();
 }
 
-// Half-page navigation using a virtual index:
-//   virtualIndex = (page - 1) * 2 + (side === 'bottom' ? 1 : 0)
-//   page 1 top = 0, page 1 bottom = 1, page 2 top = 2, page 2 bottom = 3 ...
-// This makes advance/retreat completely unambiguous with no stranded states.
-
-function halfVirtualIndex() {
-  return (currentPage - 1) * 2 + (halfPageSide === 'bottom' ? 1 : 0);
+// ── Toggle edit mode ──────────────────────────────────────
+function toggleCropEdit() {
+  if (!cropMode || !pdfDoc) return;
+  cropEditMode = !cropEditMode;
+  document.getElementById('tb-crop-edit').classList.toggle('active', cropEditMode);
+  if (cropEditMode) {
+    renderCropEditUI();
+  } else {
+    removeCropEditUI();
+    saveCrops();
+  }
 }
 
-async function gotoHalfIndex(idx) {
-  const maxIdx = totalPages * 2 - 1;
-  if (idx < 0 || idx > maxIdx) return;
-  const newPage = Math.floor(idx / 2) + 1;
-  const newSide = idx % 2 === 0 ? 'top' : 'bottom';
-  const pageChanged = newPage !== currentPage;
-  currentPage  = newPage;
-  halfPageSide = newSide;
+// ── Navigation in crop mode ───────────────────────────────
+async function cropAdvance() {
+  const seq = buildCropSequence();
+  if (seq.length === 0) return;
+  const next = cropIndex + 1;
+  if (next >= seq.length) return;
+  cropIndex = next;
+  const { page } = seq[cropIndex];
+  if (page !== currentPage) {
+    currentPage = page;
+    await renderPage();
+    redrawAnnotations();
+    if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
+  }
+  applyCropClip();
+  if (cropEditMode) renderCropEditUI();
   updateUI();
-  if (pageChanged) { await renderPage(); redrawAnnotations(); }
-  applyHalfPageClip();
-  if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
 }
 
-async function halfPageAdvance() { await gotoHalfIndex(halfVirtualIndex() + 1); }
-async function halfPageRetreat() { await gotoHalfIndex(halfVirtualIndex() - 1); }
+async function cropRetreat() {
+  const seq = buildCropSequence();
+  if (seq.length === 0) return;
+  const prev = cropIndex - 1;
+  if (prev < 0) return;
+  cropIndex = prev;
+  const { page } = seq[cropIndex];
+  if (page !== currentPage) {
+    currentPage = page;
+    await renderPage();
+    redrawAnnotations();
+    if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
+  }
+  applyCropClip();
+  if (cropEditMode) renderCropEditUI();
+  updateUI();
+}
+
+// ── Edit UI ───────────────────────────────────────────────
+function renderCropEditUI() {
+  removeCropEditUI();
+  const c = getPageCrops(currentPage);
+  const canvasH = pdfCanvas.offsetHeight;
+  const cropRect = document.getElementById('crop-wrap').getBoundingClientRect();
+  const originY  = cropRect.top + parseInt(document.getElementById('canvas-wrap').style.top || '0') * -1;
+  // originY = screen Y of canvas top
+
+  // Draw divider lines + skip buttons for each zone
+  const allBounds = [0, ...c.dividers, 1];
+
+  // Zone skip buttons
+  for (let z = 0; z < allBounds.length - 1; z++) {
+    const midFrac = (allBounds[z] + allBounds[z+1]) / 2;
+    const screenY = originY + midFrac * canvasH;
+    const btn = document.createElement('div');
+    btn.className = 'crop-zone-skip';
+    btn.style.top = screenY + 'px';
+    btn.dataset.zone = z;
+    const b = document.createElement('button');
+    b.textContent = c.skipped[z] ? 'Skipped' : 'Skip';
+    if (c.skipped[z]) b.classList.add('skipped');
+    b.onclick = () => {
+      c.skipped[z] = !c.skipped[z];
+      renderCropEditUI();
+      applyCropClip();
+    };
+    btn.appendChild(b);
+    btn.id = 'crop-skip-' + z;
+    document.body.appendChild(btn);
+  }
+
+  // Draggable divider lines
+  for (let d = 0; d < c.dividers.length; d++) {
+    const screenY = originY + c.dividers[d] * canvasH;
+    const line = document.createElement('div');
+    line.className = 'crop-divider editable';
+    line.style.top = screenY + 'px';
+    line.dataset.idx = d;
+    line.id = 'crop-div-' + d;
+
+    line.addEventListener('pointerdown', ev => {
+      _cropDragIdx   = d;
+      _cropDragStart = ev.clientY;
+      _cropDragOrig  = c.dividers[d];
+      line.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+    line.addEventListener('pointermove', ev => {
+      if (_cropDragIdx !== d) return;
+      const dy    = ev.clientY - _cropDragStart;
+      const delta = dy / canvasH;
+      let newVal  = Math.max(0.05, Math.min(0.95, _cropDragOrig + delta));
+      // Keep dividers sorted
+      if (d > 0 && newVal <= c.dividers[d-1] + 0.02) newVal = c.dividers[d-1] + 0.02;
+      if (d < c.dividers.length-1 && newVal >= c.dividers[d+1] - 0.02) newVal = c.dividers[d+1] - 0.02;
+      c.dividers[d] = newVal;
+      renderCropEditUI();
+      applyCropClip();
+    });
+    line.addEventListener('pointerup', () => {
+      _cropDragIdx = -1;
+      saveCrops();
+    });
+    document.body.appendChild(line);
+  }
+
+  // Add divider button (only if < 3 dividers = 4 zones max)
+  if (c.dividers.length < 3) {
+    const addBtn = document.getElementById('crop-add-btn') || (() => {
+      const b = document.createElement('button');
+      b.id = 'crop-add-btn'; b.textContent = '+ Add Cut';
+      document.body.appendChild(b);
+      return b;
+    })();
+    // Position in middle of page
+    const midY = originY + 0.5 * canvasH;
+    addBtn.style.top = midY + 'px';
+    addBtn.classList.add('visible');
+    addBtn.onclick = () => {
+      // Add divider in the middle of the largest zone
+      const bounds = [0, ...c.dividers, 1];
+      let bestZone = 0, bestSize = 0;
+      for (let i = 0; i < bounds.length - 1; i++) {
+        const sz = bounds[i+1] - bounds[i];
+        if (sz > bestSize) { bestSize = sz; bestZone = i; }
+      }
+      const newDiv = (bounds[bestZone] + bounds[bestZone+1]) / 2;
+      c.dividers.push(newDiv);
+      c.dividers.sort((a,b) => a - b);
+      // Fix skipped array
+      crops[currentPage] = { dividers: c.dividers, skipped: new Array(c.dividers.length + 1).fill(false) };
+      renderCropEditUI();
+      applyCropClip();
+      saveCrops();
+    };
+  } else {
+    const existing = document.getElementById('crop-add-btn');
+    if (existing) existing.classList.remove('visible');
+  }
+
+  // Reset button
+  if (!document.getElementById('crop-reset-btn')) {
+    const rb = document.createElement('button');
+    rb.id = 'crop-reset-btn';
+    rb.style.cssText = 'position:fixed;right:80px;bottom:calc(var(--toolbar-h)+8px);z-index:201;background:var(--surface);border:1px solid var(--border);color:var(--danger);border-radius:5px;padding:4px 10px;font-size:0.72rem;cursor:pointer;';
+    rb.textContent = 'Clear Crops';
+    rb.onclick = () => {
+      crops[currentPage] = { dividers: [], skipped: [false] };
+      renderCropEditUI();
+      applyCropClip();
+      saveCrops();
+    };
+    document.body.appendChild(rb);
+  }
+}
+
+function removeCropEditUI() {
+  document.querySelectorAll('.crop-divider, .crop-zone-skip').forEach(el => el.remove());
+  const ab = document.getElementById('crop-add-btn');
+  if (ab) ab.classList.remove('visible');
+  const rb = document.getElementById('crop-reset-btn');
+  if (rb) rb.remove();
+}
+
+// ── Persistence ───────────────────────────────────────────
+const STORE_CROPS = 'crops';
+
+async function saveCrops() {
+  if (!pdfHash) return;
+  try { await dbPut(STORE_CROPS, pdfHash, crops); } catch(e) {}
+}
 
 // ═══════════════════════════════════════════════════════════
 // ANNOTATION DRAWING
@@ -1906,9 +2052,9 @@ function changeThickness(delta) {
 // ═══════════════════════════════════════════════════════════
 async function changePage(delta) {
   if (!pdfDoc) return;
-  if (halfPageMode) {
-    if (delta > 0) { await halfPageAdvance(); return; }
-    else           { await halfPageRetreat(); return; }
+  if (cropMode) {
+    if (delta > 0) { await cropAdvance(); return; }
+    else           { await cropRetreat(); return; }
   }
   const next = currentPage + delta;
   if (next < 1 || next > totalPages) return;
@@ -1917,7 +2063,6 @@ async function changePage(delta) {
   updateUI();
   await renderPage();
   redrawAnnotations();
-  applyHalfPageClip();
   if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
 }
 
@@ -1934,7 +2079,6 @@ async function changeZoom(delta) {
   const oldH = pdfCanvas.offsetHeight || 1;
   zoomLevel = nz; invalidateCache(); updateUI();
   await renderPage(); redrawAnnotations();
-  applyHalfPageClip();
   viewer.scrollLeft = cx * (pdfCanvas.offsetWidth/oldW)  - viewer.clientWidth/2;
   viewer.scrollTop  = cy * (pdfCanvas.offsetHeight/oldH) - viewer.clientHeight/2;
 }
@@ -1944,8 +2088,8 @@ async function fitToWidth() {
   await computeFitScale();
   zoomLevel = 0;
   await renderPage(); redrawAnnotations();
-  applyHalfPageClip();
-  viewer.scrollTo(0, viewer.scrollHeight);
+  applyCropClip();
+  if (!cropMode) viewer.scrollTo(0, viewer.scrollHeight);
   updateUI();
 }
 
@@ -1957,8 +2101,8 @@ async function rotatePage() {
   rotation = (rotation + 90) % 360;
   await computeFitScale(); zoomLevel = 0;
   await renderPage(); redrawAnnotations();
-  applyHalfPageClip();
-  viewer.scrollTo(0, viewer.scrollHeight); updateUI();
+  applyCropClip();
+  if (!cropMode) viewer.scrollTo(0, viewer.scrollHeight); updateUI();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2033,8 +2177,7 @@ viewer.addEventListener('touchmove', e => {
     updateUI();
     renderPage().then(() => {
       redrawAnnotations();
-      applyHalfPageClip();
-      viewer.scrollLeft = cx * (pdfCanvas.offsetWidth / oldW)  - mx;
+        viewer.scrollLeft = cx * (pdfCanvas.offsetWidth / oldW)  - mx;
       viewer.scrollTop  = cy * (pdfCanvas.offsetHeight / oldH) - my;
     });
   }
@@ -2074,19 +2217,20 @@ function updateUI() {
   zoomPill.textContent = has ? pct + '%' : '—';
   zoomPill.style.color = has ? 'var(--muted)' : '#333';
 
-  // Page number pill — show "32a"/"32b" in half-page mode
-  const pagePill = document.getElementById('page-pill');
-  if (!has) {
-    pagePill.textContent = '—';
-  } else if (halfPageMode) {
-    pagePill.textContent = currentPage + (halfPageSide === 'top' ? 'a' : 'b');
+  // Page number pill
+  let atStart, atEnd;
+  if (cropMode) {
+    const seq = buildCropSequence();
+    atStart = cropIndex <= 0;
+    atEnd   = cropIndex >= seq.length - 1;
+    const cur = seq[cropIndex] || { page: currentPage, zone: 0 };
+    const c = getPageCrops(cur.page);
+    const zLabel = c.dividers.length > 0 ? 'c' + (cur.zone + 1) : '';
+    if (has) { pagePill.textContent = cur.page + zLabel; }
   } else {
-    pagePill.textContent = currentPage + ' / ' + totalPages;
+    atStart = currentPage <= 1;
+    atEnd   = currentPage >= totalPages;
   }
-
-  // In half-page mode prev/next are always enabled unless at absolute ends
-  const atStart = halfPageMode ? (currentPage === 1 && halfPageSide === 'top') : currentPage <= 1;
-  const atEnd   = halfPageMode ? (currentPage === totalPages && halfPageSide === 'bottom') : currentPage >= totalPages;
   document.getElementById('tb-prev').disabled    = !has || atStart;
   document.getElementById('tb-next').disabled    = !has || atEnd;
   document.getElementById('tb-zoom-out').disabled = !has || zoomLevel <= ZOOM_MIN;
@@ -2098,8 +2242,8 @@ function updateUI() {
   updateUndoBtn();
   document.getElementById('tb-pan').disabled     = !has;
   document.getElementById('tb-rotate').disabled  = !has;
-  document.getElementById('tb-half').disabled    = !has;
-  document.getElementById('tb-nudge').disabled   = !has;
+  document.getElementById('tb-crop').disabled    = !has;
+  if (cropMode) document.getElementById('tb-crop-edit').disabled = !has;
   document.getElementById('tb-finger').disabled  = !has;
   zoomPill.disabled = !has;
   const ppBtn = document.getElementById('page-pill');
@@ -2184,7 +2328,6 @@ async function exportData() {
   try {
     const allAnn    = await dbGetAll(STORE_ANN);
     const allLayers = await dbGetAll(STORE_LAYERS);
-    const allSplit  = await dbGetAll(STORE_SPLIT);
     const allLib    = await dbGetAll(STORE_LIBRARY);
     const allPos    = await dbGetAll(STORE_POS);
 
@@ -2231,8 +2374,8 @@ async function importData(e) {
     if (!dump.version) throw new Error('Invalid backup file.');
     const stores = [
       [STORE_ANN, dump.annotations],[STORE_LAYERS, dump.layers],
-      [STORE_SPLIT, dump.splits],[STORE_LIBRARY, dump.library],
-      [STORE_POS, dump.positions]
+[STORE_LIBRARY, dump.library],
+      [STORE_POS, dump.positions],[STORE_CROPS, dump.crops]
     ];
     for (const [storeName, data] of stores) {
       if (!data) continue;
@@ -2378,13 +2521,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const n = parseInt(input.value, 10);
       if (n >= 1 && n <= totalPages) {
         currentPage = n;
-        halfPageSide = 'top';
         viewer.scrollTo(0, viewer.scrollHeight);
         updateUI();
         await renderPage();
         redrawAnnotations();
-        applyHalfPageClip();
-        if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
+            if (pdfHash) dbPut(STORE_POS, pdfHash, { page: currentPage });
       } else {
         toast(`Page must be between 1 and ${totalPages}`);
       }
@@ -2449,8 +2590,8 @@ document.addEventListener('keydown', e => {
     case 'p': case 'P': if (pdfDoc) setMode('pan');   break;
     case 'l': case 'L': if (pdfDoc) toggleLayersPanel(); break;
     case 'z': case 'Z': if (pdfDoc) undoLast();       break;
-    case 'v': case 'V': if (pdfDoc) toggleHalfPage(); break;
     case 'n': case 'N': if (pdfDoc) setMode('finger'); break;
+    case 'v': case 'V': if (pdfDoc) toggleCropMode(); break;
     case 'o': case 'O': document.getElementById('file-input').click(); break;
   }
 });
@@ -2461,10 +2602,10 @@ document.addEventListener('keydown', e => {
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(async () => { if (pdfDoc) { await fitToWidth(); redrawAnnotations(); applyHalfPageClip(); } }, 150);
+  resizeTimer = setTimeout(async () => { if (pdfDoc) { await fitToWidth(); redrawAnnotations(); applyCropClip(); } }, 150);
 });
 screen.orientation?.addEventListener('change', () => {
-  if (pdfDoc) setTimeout(async () => { await fitToWidth(); redrawAnnotations(); applyHalfPageClip(); }, 250);
+  if (pdfDoc) setTimeout(async () => { await fitToWidth(); redrawAnnotations(); applyCropClip(); }, 250);
 });
 
 // ═══════════════════════════════════════════════════════════
