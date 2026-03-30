@@ -432,55 +432,84 @@
     #page-jump-input::-webkit-inner-spin-button { display: none; }
 
     /* ─── Crop system ────────────────────────────────────── */
-    /* crop-wrap: clips the canvas to a zone */
     #crop-wrap {
       position: relative; display: block; flex-shrink: 0;
       overflow: hidden;
     }
-    /* In crop mode, center vertically */
     #scroll-inner.crop-centered {
       justify-content: center;
       padding: 0 16px;
     }
 
-    /* Crop divider lines (fixed overlay, like old split-line) */
-    .crop-divider {
-      position: fixed; left: 0; right: 0; height: 2px;
-      background: var(--accent); z-index: 200;
-      pointer-events: none;
+    /* Crop edit overlay — sits on top of canvas-wrap, inside crop-wrap */
+    #crop-edit-overlay {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 10; pointer-events: none;
+    }
+    #crop-edit-overlay.active { display: block; }
+
+    /* Divider lines inside the overlay */
+    .crop-div-line {
+      position: absolute; left: 0; right: 0; height: 3px;
+      background: var(--accent);
       box-shadow: 0 0 6px rgba(91,140,247,0.5);
+      cursor: ns-resize; pointer-events: auto;
     }
-    .crop-divider.editable {
-      pointer-events: auto; cursor: ns-resize; height: 4px;
-    }
-    .crop-divider.editable::before {
+    .crop-div-line::before {
       content: ''; position: absolute;
-      left: 0; right: 0; top: -12px; bottom: -12px;
+      left: 0; right: 0; top: -14px; bottom: -14px;
     }
+    /* Delete hint on divider */
+    .crop-div-line::after {
+      content: '✕ hold to delete';
+      position: absolute; right: 90px; top: -10px;
+      font-size: 0.65rem; color: var(--accent);
+      background: var(--surface); padding: 1px 5px;
+      border-radius: 3px; opacity: 0; transition: opacity 0.2s;
+      pointer-events: none; white-space: nowrap;
+    }
+    .crop-div-line:hover::after { opacity: 1; }
 
-    /* Skip zone overlay */
-    .crop-zone-skip {
-      position: fixed; right: 80px;
-      z-index: 201;
+    /* Zone label bands */
+    .crop-zone-band {
+      position: absolute; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 8px; pointer-events: auto;
+      background: rgba(91,140,247,0.04);
+      border: 1px dashed rgba(91,140,247,0.2);
     }
-    .crop-zone-skip button {
+    .crop-zone-band.skipped { background: rgba(224,92,92,0.08); border-color: rgba(224,92,92,0.3); }
+
+    .crop-zone-btn {
       background: var(--surface); border: 1px solid var(--border);
-      color: var(--muted); border-radius: 5px; padding: 3px 8px;
-      font-size: 0.72rem; cursor: pointer; letter-spacing: 0.03em;
-      transition: background 0.1s;
+      color: var(--muted); border-radius: 4px; padding: 3px 8px;
+      font-size: 0.7rem; cursor: pointer; margin: 2px;
+      pointer-events: auto; white-space: nowrap;
     }
-    .crop-zone-skip button:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
-    .crop-zone-skip button.skipped { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .crop-zone-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .crop-zone-btn.skip-active { background: var(--danger); border-color: var(--danger); color: #fff; }
 
-    /* Add divider button (edit mode) */
-    #crop-add-btn {
-      display: none; position: fixed; right: 80px;
-      z-index: 201;
+    /* Add cut button — centered in largest zone */
+    .crop-add-cut {
+      position: absolute; left: 50%; transform: translateX(-50%);
       background: var(--accent); color: #fff; border: none;
-      border-radius: 5px; padding: 4px 10px; font-size: 0.72rem;
-      cursor: pointer; letter-spacing: 0.03em;
+      border-radius: 6px; padding: 6px 16px; font-size: 0.8rem;
+      cursor: pointer; pointer-events: auto; white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
-    #crop-add-btn.visible { display: block; }
+    .crop-add-cut:hover { background: var(--accent-h); }
+
+    /* Clear button — bottom of overlay */
+    #crop-clear-btn {
+      position: absolute; bottom: 8px; left: 50%;
+      transform: translateX(-50%);
+      background: none; border: 1px solid var(--danger);
+      color: var(--danger); border-radius: 5px; padding: 4px 12px;
+      font-size: 0.72rem; cursor: pointer; pointer-events: auto;
+      white-space: nowrap;
+    }
+    #crop-clear-btn:hover { background: var(--danger); color: #fff; }
 
     /* ─── Toast ───────────────────────────────────────────── */
     #toast {
@@ -506,6 +535,7 @@
           <canvas id="pdf-canvas"></canvas>
           <canvas id="hl-canvas"></canvas>
           <canvas id="ann-canvas"></canvas>
+          <div id="crop-edit-overlay"></div>
         </div>
       </div>
     </div>
@@ -1264,27 +1294,43 @@ async function cropRetreat() {
 
 // ── Edit UI ───────────────────────────────────────────────
 function renderCropEditUI() {
-  removeCropEditUI();
+  const overlay = document.getElementById('crop-edit-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = '';
+  overlay.classList.add('active');
+
   const c       = getPageCrops(currentPage);
-  // Use pdfCanvas directly — its bounding rect is always accurate
-  // regardless of crop-wrap clipping or centering.
-  const pdfRect = pdfCanvas.getBoundingClientRect();
-  const originY = pdfRect.top;
-  const canvasH = pdfRect.height;   // CSS pixels, matches offsetHeight but from screen
-  const toolbarH = parseInt(getComputedStyle(document.documentElement)
-    .getPropertyValue('--toolbar-h')) || 62;
+  const canvasH = pdfCanvas.offsetHeight;   // overlay is same size as canvas
 
-  // ── Draggable divider lines ──────────────────────────────
+  // ── Zone bands ───────────────────────────────────────────
+  const bounds = [0, ...c.dividers, 1];
+  for (let z = 0; z < bounds.length - 1; z++) {
+    const topPct = bounds[z] * 100;
+    const botPct = bounds[z+1] * 100;
+    const band   = document.createElement('div');
+    band.className = 'crop-zone-band' + (c.skipped[z] ? ' skipped' : '');
+    band.style.top    = topPct + '%';
+    band.style.height = (botPct - topPct) + '%';
+
+    // Skip toggle button
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'crop-zone-btn' + (c.skipped[z] ? ' skip-active' : '');
+    skipBtn.textContent = c.skipped[z] ? '✕ Skipped' : 'Skip zone';
+    skipBtn.onclick = ev => {
+      ev.stopPropagation();
+      c.skipped[z] = !c.skipped[z];
+      renderCropEditUI(); applyCropClip();
+    };
+    band.appendChild(skipBtn);
+    overlay.appendChild(band);
+  }
+
+  // ── Divider lines ────────────────────────────────────────
   for (let d = 0; d < c.dividers.length; d++) {
-    const screenY = originY + c.dividers[d] * canvasH;
     const line = document.createElement('div');
-    line.className = 'crop-divider editable';
-    line.style.top = screenY + 'px';
-    line.id = 'crop-div-' + d;
-    // Label showing fraction
-    line.title = 'Drag to move · ' + Math.round(c.dividers[d]*100) + '%';
+    line.className = 'crop-div-line';
+    line.style.top = (c.dividers[d] * 100) + '%';
 
-    // Long-press to delete
     let pressTimer = null;
     line.addEventListener('pointerdown', ev => {
       if (ev.button !== 0) return;
@@ -1292,119 +1338,78 @@ function renderCropEditUI() {
       _cropDragStart = ev.clientY;
       _cropDragOrig  = c.dividers[d];
       line.setPointerCapture(ev.pointerId);
-      ev.stopPropagation();
-      ev.preventDefault();
+      ev.stopPropagation(); ev.preventDefault();
       pressTimer = setTimeout(() => {
-        // Long press → delete this divider
+        pressTimer = null;
         c.dividers.splice(d, 1);
         crops[currentPage] = { dividers: c.dividers,
           skipped: new Array(c.dividers.length + 1).fill(false) };
+        _cropDragIdx = -1;
         renderCropEditUI(); applyCropClip(); saveCrops();
       }, 600);
-    });
+    }, { passive: false });
+
     line.addEventListener('pointermove', ev => {
       if (_cropDragIdx !== d) return;
       clearTimeout(pressTimer); pressTimer = null;
-      const dy    = ev.clientY - _cropDragStart;
-      const delta = dy / canvasH;
-      let v = Math.max(0.05, Math.min(0.95, _cropDragOrig + delta));
+      const dy  = ev.clientY - _cropDragStart;
+      let v = Math.max(0.05, Math.min(0.95, _cropDragOrig + dy / canvasH));
       if (d > 0) v = Math.max(v, c.dividers[d-1] + 0.02);
       if (d < c.dividers.length-1) v = Math.min(v, c.dividers[d+1] - 0.02);
       c.dividers[d] = v;
-      // Move the line live without full re-render for smoothness
-      line.style.top = (originY + v * canvasH) + 'px';
+      line.style.top = (v * 100) + '%';
+      // Update adjacent bands live
+      renderCropEditUI();
     });
+
     line.addEventListener('pointerup', () => {
       clearTimeout(pressTimer); pressTimer = null;
       _cropDragIdx = -1;
-      renderCropEditUI(); applyCropClip(); saveCrops();
+      applyCropClip(); saveCrops();
     });
-    document.body.appendChild(line);
+
+    overlay.appendChild(line);
   }
 
-  // ── Zone skip buttons ────────────────────────────────────
-  const allBounds = [0, ...c.dividers, 1];
-  for (let z = 0; z < allBounds.length - 1; z++) {
-    const midFrac = (allBounds[z] + allBounds[z+1]) / 2;
-    const screenY = originY + midFrac * canvasH;
-    // Clamp so button stays visible above toolbar
-    const clampedY = Math.min(screenY, window.innerHeight - toolbarH - 36);
-    const wrap = document.createElement('div');
-    wrap.className = 'crop-zone-skip';
-    wrap.style.top = clampedY + 'px';
-    wrap.id = 'crop-skip-' + z;
-    const b = document.createElement('button');
-    b.textContent = c.skipped[z] ? '✕ Skipped' : 'Skip';
-    if (c.skipped[z]) b.classList.add('skipped');
-    b.onclick = ev => {
-      ev.stopPropagation();
-      c.skipped[z] = !c.skipped[z];
-      renderCropEditUI(); applyCropClip();
-    };
-    wrap.appendChild(b);
-    document.body.appendChild(wrap);
-  }
-
-  // ── Add Cut button ───────────────────────────────────────
-  let addBtn = document.getElementById('crop-add-btn');
-  if (!addBtn) {
-    addBtn = document.createElement('button');
-    addBtn.id = 'crop-add-btn';
-    document.body.appendChild(addBtn);
-  }
+  // ── Add Cut button (in middle of largest zone) ───────────
   if (c.dividers.length < 3) {
-    // Position above toolbar, vertically centered in page but clamped
-    const btnY = Math.min(
-      originY + canvasH * 0.5 - 14,
-      window.innerHeight - toolbarH - 40
-    );
-    addBtn.style.top = Math.max(8, btnY) + 'px';
-    addBtn.textContent = '+ Add Cut';
-    addBtn.classList.add('visible');
+    let bestZone = 0, bestSize = 0;
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const sz = bounds[i+1] - bounds[i];
+      if (sz > bestSize) { bestSize = sz; bestZone = i; }
+    }
+    const midFrac = (bounds[bestZone] + bounds[bestZone+1]) / 2;
+    const addBtn  = document.createElement('button');
+    addBtn.className  = 'crop-add-cut';
+    addBtn.style.top  = (midFrac * 100) + '%';
+    addBtn.style.transform = 'translate(-50%, -50%)';
+    addBtn.textContent = '＋ Add cut here';
     addBtn.onclick = ev => {
       ev.stopPropagation();
-      const bounds = [0, ...c.dividers, 1];
-      let bestZone = 0, bestSize = 0;
-      for (let i = 0; i < bounds.length - 1; i++) {
-        const sz = bounds[i+1] - bounds[i];
-        if (sz > bestSize) { bestSize = sz; bestZone = i; }
-      }
-      const newDiv = (bounds[bestZone] + bounds[bestZone+1]) / 2;
-      c.dividers.push(newDiv);
+      c.dividers.push(midFrac);
       c.dividers.sort((a,b) => a-b);
       crops[currentPage] = { dividers: c.dividers,
         skipped: new Array(c.dividers.length + 1).fill(false) };
       renderCropEditUI(); applyCropClip(); saveCrops();
     };
-  } else {
-    addBtn.classList.remove('visible');
+    overlay.appendChild(addBtn);
   }
 
-  // ── Clear Crops button ───────────────────────────────────
-  let rb = document.getElementById('crop-reset-btn');
-  if (!rb) {
-    rb = document.createElement('button');
-    rb.id = 'crop-reset-btn';
-    rb.style.cssText = `position:fixed;left:50%;transform:translateX(-50%);
-      bottom:calc(var(--toolbar-h) + 8px);z-index:201;
-      background:var(--surface);border:1px solid var(--border);
-      color:var(--danger);border-radius:5px;padding:5px 14px;
-      font-size:0.78rem;cursor:pointer;letter-spacing:0.03em;`;
-    rb.textContent = 'Clear All Crops';
-    rb.onclick = () => {
-      crops[currentPage] = { dividers: [], skipped: [false] };
-      renderCropEditUI(); applyCropClip(); saveCrops();
-    };
-    document.body.appendChild(rb);
-  }
+  // ── Clear button ─────────────────────────────────────────
+  const clearBtn = document.createElement('button');
+  clearBtn.id = 'crop-clear-btn';
+  clearBtn.textContent = 'Clear all cuts';
+  clearBtn.onclick = ev => {
+    ev.stopPropagation();
+    crops[currentPage] = { dividers: [], skipped: [false] };
+    renderCropEditUI(); applyCropClip(); saveCrops();
+  };
+  overlay.appendChild(clearBtn);
 }
 
 function removeCropEditUI() {
-  document.querySelectorAll('.crop-divider, .crop-zone-skip').forEach(el => el.remove());
-  const ab = document.getElementById('crop-add-btn');
-  if (ab) ab.classList.remove('visible');
-  const rb = document.getElementById('crop-reset-btn');
-  if (rb) rb.remove();
+  const overlay = document.getElementById('crop-edit-overlay');
+  if (overlay) { overlay.innerHTML = ''; overlay.classList.remove('active'); }
 }
 
 // ── Persistence ───────────────────────────────────────────
